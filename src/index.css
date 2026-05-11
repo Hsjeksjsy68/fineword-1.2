@@ -1,0 +1,65 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800;900&display=swap');
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "Poppins", ui-sans-serif, system-ui, sans-serif;
+}
+
+html, body {
+  @apply bg-white text-black dark:bg-zinc-950 dark:text-white;
+  margin: 0;
+  padding: 0;
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Custom scrollbar for PC */
+@media (min-width: 1024px) {
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  
+  /* Light Theme (Default) */
+  ::-webkit-scrollbar-track {
+    background: #ffffff;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #000000;
+    border-radius: 3px;
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #000000 #ffffff;
+  }
+
+  /* Dark Theme */
+  html.dark ::-webkit-scrollbar-track {
+    background: #000000;
+  }
+  html.dark ::-webkit-scrollbar-thumb {
+    background: #ffffff;
+  }
+  html.dark * {
+    scrollbar-color: #ffffff #000000;
+  }
+}
+
+/* Hide scrollbar for tablet and phone */
+@media (max-width: 1023px) {
+  ::-webkit-scrollbar {
+    display: none;
+  }
+  * {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
