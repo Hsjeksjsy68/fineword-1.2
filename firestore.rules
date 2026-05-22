@@ -12,7 +12,7 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isSignedIn() && "email" in request.auth.token && request.auth.token.email == "wwwrakibcom071@gmail.com";
+      return isSignedIn() && "email" in request.auth.token && request.auth.token.email in ["wwwrakibcom071@gmail.com", "arbnyt60@gmail.com"];
     }
 
     function isOwner(userId) {
@@ -56,6 +56,7 @@ service cloud.firestore {
         // verification checks
         && (!('isVerified' in data) || data.isVerified is bool)
         && (!('verificationStatus' in data) || data.verificationStatus in ['none', 'pending', 'accepted', 'rejected'])
+        && (!('verificationData' in data) || data.verificationData is map)
         && (!('deactivated' in data) || data.deactivated is bool);
     }
 
@@ -98,10 +99,11 @@ service cloud.firestore {
         && data.actorId is string
         && data.actorId.size() >= 1
         && data.type is string
-        && data.type in ['like', 'comment', 'follow']
+        && data.type in ['like', 'comment', 'follow', 'system']
         && data.read is bool
         && data.createdAt is timestamp
-        && (!('postId' in data) || (data.postId is string && data.postId.size() >= 1));
+        && (!('postId' in data) || (data.postId is string && data.postId.size() >= 1))
+        && (!('message' in data) || (data.message is string && data.message.size() >= 1));
     }
 
     function isValidChat(data) {
@@ -190,7 +192,7 @@ service cloud.firestore {
                     && (
                       (
                         isOwner(userId)
-                        && incoming().diff(existing()).affectedKeys().hasOnly(['username', 'name', 'avatar', 'bio', 'theme', 'verificationStatus', 'deactivated'])
+                        && incoming().diff(existing()).affectedKeys().hasOnly(['username', 'name', 'avatar', 'bio', 'theme', 'verificationStatus', 'verificationData', 'deactivated'])
                         && (!('verificationStatus' in incoming().diff(existing()).affectedKeys()) || incoming().verificationStatus in ['pending', 'none'])
                       )
                       ||

@@ -4,9 +4,8 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Link, useNavigate, useLocation, useParams } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Link, useNavigate, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { Home, MessageCircle, User as UserIcon, Heart, Send, PlusSquare, Image as ImageIcon, ChevronLeft, MoreHorizontal, LogOut, Search, Moon, Sun, Share2, Music, Type, Palette, Check, BarChart2, X, Trophy } from 'lucide-react';
-import { TournamentPoster } from './TournamentPoster';
 import { formatDistanceToNow, format, isSameDay } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
@@ -98,6 +97,27 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+export function formatTextHighlight(text: string) {
+  if (!text) return text;
+  const parts = text.split(/(https?:\/\/[^\s]+|#[a-zA-Z0-9_]+)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith('http')) {
+      return (
+        <a key={i} href={part} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline break-all" onClick={e => e.stopPropagation()}>
+          {part}
+        </a>
+      );
+    } else if (part.startsWith('#')) {
+      return (
+        <Link key={i} to={`/search?q=${encodeURIComponent(part)}`} className="text-indigo-500 font-medium hover:underline" onClick={e => e.stopPropagation()}>
+          {part}
+        </Link>
+      );
+    }
+    return part;
+  });
+}
+
 // --- MOCK DATA & TYPES ---
 
 type User = {
@@ -108,8 +128,29 @@ type User = {
   bio: string;
   theme?: 'light' | 'dark';
   isVerified?: boolean;
+  verifiedUntil?: Date | any;
   verificationStatus?: 'none' | 'pending' | 'accepted' | 'rejected';
+  verificationData?: {
+    fullName: string;
+    address: string;
+    phoneNumber: string;
+    nidBid: string;
+    birthDate: string;
+    nagadNumber: string;
+    transactionId: string;
+  };
   deactivated?: boolean;
+  bannedUntil?: Date | any;
+  reportCount?: number;
+};
+
+type Report = {
+  id: string;
+  reporterId: string;
+  reportedUserId: string;
+  reason: string;
+  createdAt: Date | any;
+  status: 'pending' | 'resolved';
 };
 
 type Post = {
@@ -120,6 +161,7 @@ type Post = {
   likes: number;
   likedBy: string[];
   createdAt: Date;
+  isItalic?: boolean;
 };
 
 type TextOverlay = {
@@ -183,8 +225,9 @@ type Notification = {
   id: string;
   userId: string;
   actorId: string;
-  type: 'like' | 'comment' | 'follow';
+  type: 'like' | 'comment' | 'follow' | 'system';
   postId?: string;
+  message?: string;
   read: boolean;
   createdAt: Date;
 };
@@ -273,17 +316,17 @@ const useApp = () => React.useContext(AppContext)!;
 
 const SideNav = () => {
   const location = useLocation();
-  const { chats, currentUser } = useApp();
+  const { chats, currentUser, notifications } = useApp();
   
-  const hasUnseenMessages = chats.some(c => currentUser && (!c.seenBy || !c.seenBy.includes(currentUser.id)) && c.lastMessage);
+  const unseenMessageCount = chats.filter(c => currentUser && (!c.seenBy || !c.seenBy.includes(currentUser.id)) && c.lastMessage).length;
+  const unseenNotificationCount = notifications.filter(n => !n.read).length;
 
   const navItems = [
     { path: '/', icon: Home, label: 'Home' },
     { path: '/search', icon: Search, label: 'Search' },
     { path: '/create', icon: PlusSquare, label: 'Create' },
-    { path: '/tournament', icon: Trophy, label: 'Tournament' },
-    { path: '/notifications', icon: Heart, label: 'Notifications' },
-    { path: '/chat', icon: MessageCircle, hasUnseen: hasUnseenMessages, label: 'Messages' },
+    { path: '/notifications', icon: Heart, badgeCount: unseenNotificationCount, label: 'Notifications' },
+    { path: '/chat', icon: MessageCircle, badgeCount: unseenMessageCount, label: 'Messages' },
     { path: '/profile', icon: UserIcon, label: 'Profile' },
   ];
 
@@ -304,8 +347,10 @@ const SideNav = () => {
             <Link key={item.path} to={item.path} className={cn("flex flex-row items-center gap-4 p-3 rounded-xl transition-all group", isActive ? "font-bold" : "hover:bg-zinc-100 dark:hover:bg-zinc-900")}>
               <div className="relative flex items-center justify-center lg:justify-start w-full">
                 <Icon size={26} className={cn("transition-transform group-hover:scale-105", isActive ? "text-indigo-600 dark:text-indigo-400" : "text-zinc-800 dark:text-zinc-200 group-hover:text-black dark:group-hover:text-white")} />
-                {item.hasUnseen && (
-                  <div className="absolute top-0 right-[calc(50%-18px)] lg:right-auto lg:left-4 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white dark:border-black" />
+                {!!item.badgeCount && item.badgeCount > 0 && (
+                  <div className="absolute -top-1.5 right-[calc(50%-22px)] lg:right-auto lg:left-4 h-[18px] min-w-[18px] px-1 bg-red-500 rounded-full border border-white dark:border-black flex items-center justify-center text-[10px] font-bold text-white shadow-sm">
+                    {item.badgeCount > 99 ? '99+' : item.badgeCount}
+                  </div>
                 )}
                 <span className={cn("hidden lg:block ml-4 text-[16px]", isActive ? "text-indigo-600 dark:text-indigo-400" : "text-zinc-800 dark:text-zinc-200 group-hover:text-black dark:group-hover:text-white")}>{item.label}</span>
               </div>
@@ -334,14 +379,13 @@ const BottomNav = () => {
   const location = useLocation();
   const { chats, currentUser } = useApp();
   
-  const hasUnseenMessages = chats.some(c => currentUser && (!c.seenBy || !c.seenBy.includes(currentUser.id)) && c.lastMessage);
+  const unseenMessageCount = chats.filter(c => currentUser && (!c.seenBy || !c.seenBy.includes(currentUser.id)) && c.lastMessage).length;
 
   const navItems = [
     { path: '/', icon: Home },
     { path: '/search', icon: Search },
     { path: '/create', icon: PlusSquare },
-    { path: '/tournament', icon: Trophy },
-    { path: '/chat', icon: MessageCircle, hasUnseen: hasUnseenMessages },
+    { path: '/chat', icon: MessageCircle, badgeCount: unseenMessageCount },
     { path: '/profile', icon: UserIcon },
   ];
 
@@ -360,8 +404,10 @@ const BottomNav = () => {
               className={cn("transition-colors", isActive ? "text-indigo-400" : "text-zinc-600 hover:text-zinc-500 dark:text-zinc-500 dark:text-zinc-400")} 
               strokeWidth={isActive ? 2.5 : 2}
             />
-            {item.hasUnseen && (
-              <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 border-2 border-white dark:border-black rounded-full" />
+            {!!item.badgeCount && item.badgeCount > 0 && (
+              <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-red-500 border border-white dark:border-black rounded-full flex items-center justify-center text-[10px] font-bold text-white shadow-sm">
+                {item.badgeCount > 99 ? '99+' : item.badgeCount}
+              </span>
             )}
           </Link>
         );
@@ -471,8 +517,8 @@ const PostItem: React.FC<{ post: Post }> = ({ post }) => {
               onClick={() => setIsZoomed(true)}
             />
           ) : (
-            <div className="text-xl font-medium text-center text-zinc-900 dark:text-zinc-100 italic">
-              {post.caption}
+            <div className={cn("text-lg font-medium text-center text-zinc-900 dark:text-zinc-100", post.isItalic && "italic")}>
+              {formatTextHighlight(post.caption)}
             </div>
           )}
         </div>
@@ -540,7 +586,7 @@ const PostItem: React.FC<{ post: Post }> = ({ post }) => {
         ) : (
           <p className="text-[14px] leading-relaxed">
             <span className="font-semibold mr-2 text-zinc-900 dark:text-zinc-100">{user.username}</span>
-            <span className="text-zinc-800 dark:text-zinc-200">{post.caption}</span>
+            <span className="text-zinc-800 dark:text-zinc-200">{formatTextHighlight(post.caption)}</span>
           </p>
         )}
         
@@ -653,7 +699,7 @@ const CommentsScreen = () => {
                    <span className="font-bold text-[13px] text-zinc-900 dark:text-zinc-100">{u.username}</span>
                    <span className="text-[11px] text-zinc-500 dark:text-zinc-500">{formatDistanceToNow(cm.createdAt)}</span>
                  </div>
-                 <p className="text-[13px] text-zinc-700 dark:text-zinc-300 mt-1">{cm.text}</p>
+                 <p className="text-[13px] text-zinc-700 dark:text-zinc-300 mt-1">{formatTextHighlight(cm.text)}</p>
                </div>
             </div>
           )
@@ -677,22 +723,93 @@ const CommentsScreen = () => {
 };
 
 // --- SCREENS ---
+const VerificationRequestModal = ({ onClose }: { onClose: () => void }) => {
+  const { currentUser, showToast } = useApp();
+  const [formData, setFormData] = useState({
+    fullName: '', address: '', phoneNumber: '', nidBid: '', birthDate: '', nagadNumber: '', transactionId: ''
+  });
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentUser) return;
+    setLoading(true);
+    try {
+      await updateDoc(doc(db, 'users', currentUser.id), {
+        verificationStatus: 'pending',
+        verificationData: formData
+      });
+      showToast('Verification request sent successfully!');
+      onClose();
+    } catch (e) {
+      console.error(e);
+      showToast('Error sending request. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
+      <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="bg-white dark:bg-zinc-950 w-full max-w-md rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+        <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center bg-white dark:bg-zinc-950 sticky top-0 z-10 shrink-0">
+          <h2 className="font-bold text-lg dark:text-white">Verification Request</h2>
+          <button onClick={onClose} className="p-1.5 bg-zinc-100 dark:bg-zinc-900 rounded-full text-zinc-500 hover:text-black dark:text-zinc-400 dark:hover:text-white transition-colors">
+            <X size={20} />
+          </button>
+        </div>
+        <div className="overflow-y-auto px-5 py-6 no-scrollbar flex-1">
+          <form id="verify-form" onSubmit={handleSubmit} className="flex flex-col gap-4">
+             <div className="bg-indigo-50 dark:bg-indigo-900/10 border border-indigo-100 dark:border-indigo-800/20 p-4 rounded-xl text-center mb-2">
+               <span className="inline-block p-3 bg-indigo-100 dark:bg-indigo-900/30 rounded-full mb-2">
+                 <Trophy size={28} className="text-indigo-500" />
+               </span>
+               <h3 className="font-bold text-indigo-900 dark:text-indigo-100">Get Verified</h3>
+               <p className="text-sm text-indigo-700 dark:text-indigo-300 mt-1">Please pay <strong className="font-bold">100 TK</strong> fee for 1 month via Nagad to <strong className="font-bold">+8801705573859</strong> and submit the transaction info along with correct details below.</p>
+             </div>
+             
+             {[
+               { id: 'fullName', label: 'Full Name', type: 'text', placeholder: 'Your full name' },
+               { id: 'address', label: 'Address', type: 'text', placeholder: 'Your current address' },
+               { id: 'phoneNumber', label: 'Phone Number', type: 'tel', placeholder: 'e.g. 01XXXXXXXXX' },
+               { id: 'nidBid', label: 'NID / Birth Registration ID', type: 'text', placeholder: 'National ID or Birth ID number' },
+               { id: 'birthDate', label: 'Date of Birth', type: 'date', placeholder: '' },
+               { id: 'nagadNumber', label: 'Nagad Number (From which you sent fee)', type: 'tel', placeholder: 'e.g. 01XXXXXXXXX' },
+               { id: 'transactionId', label: 'Transaction ID (TrxID)', type: 'text', placeholder: 'Nagad transaction ID' }
+             ].map(field => (
+               <div key={field.id} className="flex flex-col gap-1.5">
+                 <label className="text-sm font-bold text-zinc-700 dark:text-zinc-300 ml-1">{field.label}</label>
+                 <input 
+                   required 
+                   type={field.type} 
+                   placeholder={field.placeholder}
+                   value={(formData as any)[field.id]}
+                   onChange={e => setFormData({ ...formData, [field.id]: e.target.value })}
+                   className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 outline-none focus:border-indigo-500 dark:focus:border-indigo-500 transition-colors text-[15px] dark:text-white"
+                 />
+               </div>
+             ))}
+          </form>
+        </div>
+        <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 shrink-0">
+          <button 
+             type="submit" 
+             form="verify-form"
+             disabled={loading}
+             className="w-full py-3.5 bg-indigo-500 hover:bg-indigo-600 text-white rounded-xl font-bold text-[15px] transition-colors disabled:opacity-50 flex justify-center items-center"
+          >
+             {loading ? <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span> : 'Submit Request'}
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
 const SettingsScreen = () => {
   const { currentUser, showToast, logout } = useApp();
   const navigate = useNavigate();
-
-  const handleApplyVerification = async () => {
-    if (!currentUser) return;
-    try {
-      await updateDoc(doc(db, 'users', currentUser.id), {
-        verificationStatus: 'pending'
-      });
-      showToast('Verification request sent!');
-    } catch (e) {
-      console.error(e);
-      showToast('Error sending verification request');
-    }
-  };
+  const [showVerifyModal, setShowVerifyModal] = useState(false);
 
   const handleDeactivate = async () => {
     if (!currentUser) return;
@@ -742,7 +859,7 @@ const SettingsScreen = () => {
         <div className="flex flex-col gap-2">
           <h3 className="font-bold text-lg mb-2 text-zinc-900 dark:text-zinc-100">Account</h3>
           <button 
-            onClick={handleApplyVerification}
+            onClick={() => setShowVerifyModal(true)}
             disabled={currentUser?.isVerified || currentUser?.verificationStatus === 'pending'}
             className="w-full text-left bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-800 p-4 rounded-xl font-medium transition-colors disabled:opacity-50"
           >
@@ -762,7 +879,7 @@ const SettingsScreen = () => {
             Delete account
           </button>
           
-          {auth.currentUser?.email === 'wwwrakibcom071@gmail.com' && (
+          {['wwwrakibcom071@gmail.com', 'arbnyt60@gmail.com'].includes(auth.currentUser?.email || '') && (
             <button 
               onClick={() => navigate('/admin')}
               className="w-full mt-2 text-left bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800/30 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 p-4 rounded-xl font-bold flex items-center justify-between transition-colors"
@@ -779,32 +896,78 @@ const SettingsScreen = () => {
           </button>
         </div>
       </div>
+      {showVerifyModal && <VerificationRequestModal onClose={() => setShowVerifyModal(false)} />}
     </motion.div>
   );
 };
 
 const AdminDashboardScreen = () => {
-  const { currentUser, showToast } = useApp();
+  const { posts, showToast } = useApp();
   const navigate = useNavigate();
-  const [requests, setRequests] = useState<User[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [reports, setReports] = useState<Report[]>([]);
+  const [tab, setTab] = useState<'overview' | 'verifications' | 'verified' | 'reports' | 'users'>('overview');
+
+  const isAdmin = ['wwwrakibcom071@gmail.com', 'arbnyt60@gmail.com'].includes(auth.currentUser?.email || '');
 
   useEffect(() => {
-    if (auth.currentUser?.email !== 'wwwrakibcom071@gmail.com') return;
-    const q = query(collection(db, 'users'), where('verificationStatus', '==', 'pending'));
-    const unsub = onSnapshot(q, snap => {
-      const p: User[] = [];
-      snap.forEach(d => p.push(d.data() as User));
-      setRequests(p);
+    if (!isAdmin) return;
+    const unsubUsers = onSnapshot(collection(db, 'users'), snap => {
+      const u: User[] = [];
+      snap.forEach(d => u.push(d.data() as User));
+      setUsers(u);
     });
-    return () => unsub();
-  }, [currentUser]);
+    
+    const unsubReports = onSnapshot(collection(db, 'reports'), snap => {
+      const r: Report[] = [];
+      snap.forEach(d => r.push({ ...d.data(), id: d.id, createdAt: d.data().createdAt?.toDate?.() || new Date() } as Report));
+      setReports(r.sort((a,b) => b.createdAt.getTime() - a.createdAt.getTime()));
+    });
+    
+    return () => { unsubUsers(); unsubReports(); };
+  }, [isAdmin]);
 
   const handleAction = async (userId: string, action: 'accepted' | 'rejected') => {
     try {
-      await updateDoc(doc(db, 'users', userId), {
+      const updates: any = {
         verificationStatus: action,
         isVerified: action === 'accepted'
-      });
+      };
+      
+      if (action === 'accepted') {
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + 30); // 30 days
+        updates.verifiedUntil = expiresAt;
+      } else {
+        updates.verifiedUntil = null;
+      }
+      
+      await updateDoc(doc(db, 'users', userId), updates);
+      
+      if (action === 'rejected') {
+        const notifId = `sys_${Date.now()}_${Math.floor(Math.random() * 1000000)}`;
+        await setDoc(doc(db, 'notifications', notifId), {
+          id: notifId,
+          userId: userId,
+          actorId: auth.currentUser?.uid || 'system',
+          type: 'system',
+          message: 'Your verification request was not accepted. Please review your submitted details and try again.',
+          read: false,
+          createdAt: serverTimestamp()
+        });
+      } else if (action === 'accepted') {
+        const notifId = `sys_${Date.now()}_${Math.floor(Math.random() * 1000000)}`;
+        await setDoc(doc(db, 'notifications', notifId), {
+          id: notifId,
+          userId: userId,
+          actorId: auth.currentUser?.uid || 'system',
+          type: 'system',
+          message: 'Congratulations! Your verification request has been accepted. You are now verified.',
+          read: false,
+          createdAt: serverTimestamp()
+        });
+      }
+      
       showToast('Verification request ' + action);
     } catch (e) {
       console.error(e);
@@ -812,45 +975,278 @@ const AdminDashboardScreen = () => {
     }
   };
 
-  if (auth.currentUser?.email !== 'wwwrakibcom071@gmail.com') {
+  const handleRemoveVerified = async (userId: string) => {
+    if (!window.confirm("Are you sure you want to remove the verified mark from this user?")) return;
+    try {
+      await updateDoc(doc(db, 'users', userId), {
+        isVerified: false,
+        verifiedUntil: null,
+        verificationStatus: 'none'
+      });
+      showToast('Verified mark removed');
+    } catch (e) {
+      showToast('Error removing verified mark');
+    }
+  };
+  
+  const handleBanUser = async (userId: string, permanent: boolean = false) => {
+    if (!window.confirm(`Are you sure you want to ban this user ${permanent ? 'permanently' : 'for 7 days'}?`)) return;
+    try {
+      const updates: any = {};
+      if (permanent) {
+        let future = new Date();
+        future.setFullYear(future.getFullYear() + 100);
+        updates.bannedUntil = future;
+      } else {
+        let future = new Date();
+        future.setDate(future.getDate() + 7); // Ban for 7 days
+        updates.bannedUntil = future;
+      }
+      await updateDoc(doc(db, 'users', userId), updates);
+      showToast('User banned ' + (permanent ? 'permanently' : 'for 7 days'));
+    } catch (e) {
+      showToast('Error banning user');
+    }
+  };
+  
+  const handleResolveReport = async (reportId: string) => {
+    try {
+      await updateDoc(doc(db, 'reports', reportId), {
+        status: 'resolved'
+      });
+      showToast('Report marked as resolved');
+    } catch (e) {
+      showToast('Error resolving report');
+    }
+  };
+
+  const handleDeleteUser = async (userId: string) => {
+    if (!window.confirm("Are you sure you want to delete this user?")) return;
+    try {
+      await deleteDoc(doc(db, 'users', userId));
+      showToast('User deleted manually');
+    } catch (e) {
+      console.error(e);
+      showToast('Error deleting user');
+    }
+  }
+
+  if (!isAdmin) {
     return (
-      <div className="flex-1 flex flex-col justify-center items-center text-red-500">
-        Access Denied
+      <div className="flex-1 flex flex-col justify-center items-center text-red-500 font-bold bg-white dark:bg-black">
+        Access Denied - Authorized Personnel Only
       </div>
     );
   }
 
+  const pendingRequests = users.filter(u => u.verificationStatus === 'pending');
+  const verifiedUsers = users.filter(u => u.isVerified);
+  const pendingReports = reports.filter(r => r.status !== 'resolved');
+
   return (
-    <motion.div initial={{ x: 50, opacity: 0 }} animate={{ x: 0, opacity: 1 }} className="flex-1 flex flex-col min-h-0 bg-white dark:bg-black absolute inset-0 z-50">
-      <header className="flex items-center px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black/90 backdrop-blur-md sticky top-0 z-10 shrink-0">
-        <button onClick={() => navigate(-1)} className="mr-3 p-1.5 rounded-full text-zinc-500 dark:text-zinc-400 hover:text-black dark:text-white transition-colors"><ChevronLeft size={24} /></button>
-        <span className="font-bold text-[15px] text-zinc-900 dark:text-zinc-100">Admin Dashboard</span>
+    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="flex-1 flex flex-col min-h-0 bg-white dark:bg-black absolute inset-0 z-50">
+      <header className="flex items-center justify-between px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black/90 backdrop-blur-md sticky top-0 z-10 shrink-0">
+        <div className="flex items-center">
+          <button onClick={() => navigate(-1)} className="mr-3 p-1.5 rounded-full text-zinc-500 dark:text-zinc-400 hover:text-black dark:text-white transition-colors"><ChevronLeft size={24} /></button>
+          <span className="font-bold text-[16px] text-zinc-900 dark:text-zinc-100 flex items-center gap-2"><Trophy size={18} className="text-indigo-500" /> Admin Command Center</span>
+        </div>
       </header>
 
+      <div className="flex gap-4 px-5 pt-4 shrink-0 overflow-x-auto no-scrollbar border-b border-zinc-200 dark:border-zinc-800">
+        {(['overview', 'verifications', 'verified', 'reports', 'users'] as const).map(t => (
+          <button 
+            key={t}
+            onClick={() => setTab(t)}
+            className={cn("pb-3 px-2 text-[14px] font-bold transition-colors border-b-2 whitespace-nowrap capitalize", tab === t ? "border-indigo-500 text-indigo-500" : "border-transparent text-zinc-500 dark:text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300")}
+          >
+            {t} 
+            {t === 'verifications' && pendingRequests.length > 0 && <span className="ml-1 bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">{pendingRequests.length}</span>}
+            {t === 'reports' && pendingReports.length > 0 && <span className="ml-1 bg-amber-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">{pendingReports.length}</span>}
+          </button>
+        ))}
+      </div>
+
       <div className="flex-1 overflow-y-auto px-5 py-6">
-        <h2 className="font-bold text-xl mb-4">Verification Requests ({requests.length})</h2>
-        <div className="flex flex-col gap-4">
-          {requests.map(user => (
-            <div key={user.id} className="p-4 border border-zinc-200 dark:border-zinc-800 rounded-xl flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <img src={user.avatar || undefined} className="w-12 h-12 rounded-full bg-zinc-200 dark:bg-zinc-800 object-cover" />
-                <div className="flex flex-col">
-                  <span className="font-bold text-zinc-900 dark:text-zinc-100">{user.name}</span>
-                  <span className="text-zinc-500 text-sm">@{user.username}</span>
+        {tab === 'overview' && (
+          <div className="flex flex-col gap-6">
+            <h2 className="font-bold text-xl dark:text-white">Platform Health</h2>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-indigo-50 dark:bg-indigo-900/20 p-5 rounded-2xl border border-indigo-100 dark:border-indigo-800/30">
+                <p className="text-sm font-semibold text-indigo-600 dark:text-indigo-400 mb-1">Total Users</p>
+                <p className="text-4xl font-bold text-zinc-900 dark:text-zinc-100">{users.length}</p>
+              </div>
+              <div className="bg-emerald-50 dark:bg-emerald-900/20 p-5 rounded-2xl border border-emerald-100 dark:border-emerald-800/30">
+                <p className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 mb-1">Total Posts</p>
+                <p className="text-4xl font-bold text-zinc-900 dark:text-zinc-100">{posts.length}</p>
+              </div>
+              <div className="bg-rose-50 dark:bg-rose-900/20 p-5 rounded-2xl border border-rose-100 dark:border-rose-800/30">
+                <p className="text-sm font-semibold text-rose-600 dark:text-rose-400 mb-1">Pending Verifications</p>
+                <p className="text-4xl font-bold text-zinc-900 dark:text-zinc-100">{pendingRequests.length}</p>
+              </div>
+              <div className="bg-amber-50 dark:bg-amber-900/20 p-5 rounded-2xl border border-amber-100 dark:border-amber-800/30">
+                <p className="text-sm font-semibold text-amber-600 dark:text-amber-400 mb-1">Pending Reports</p>
+                <p className="text-4xl font-bold text-zinc-900 dark:text-zinc-100">{pendingReports.length}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {tab === 'verifications' && (
+          <div className="flex flex-col gap-4">
+            <h2 className="font-bold text-xl dark:text-white mb-2">Verification Queue ({pendingRequests.length})</h2>
+            {pendingRequests.map(user => (
+              <div key={user.id} className="p-4 border border-zinc-200 dark:border-zinc-800 rounded-xl flex flex-col gap-4 bg-white dark:bg-zinc-950">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <img src={user.avatar || undefined} className="w-12 h-12 rounded-full bg-zinc-200 dark:bg-zinc-800 object-cover border border-zinc-100 dark:border-zinc-800" />
+                    <div className="flex flex-col">
+                      <span className="font-bold text-zinc-900 dark:text-zinc-100 text-[15px]">{user.name}</span>
+                      <span className="text-zinc-500 text-[13px] font-medium">@{user.username}</span>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => handleAction(user.id, 'accepted')} className="bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-[13px] font-bold transition-colors">Accept</button>
+                    <button onClick={() => handleAction(user.id, 'rejected')} className="bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 rounded-lg text-[13px] font-bold transition-colors">Reject</button>
+                  </div>
                 </div>
+                
+                {user.verificationData && (
+                  <div className="bg-zinc-50 dark:bg-zinc-900/50 rounded-lg p-3 text-[13px] border border-zinc-100 dark:border-zinc-800 grid grid-cols-2 gap-3">
+                    <div><span className="text-zinc-500 block text-[11px] uppercase tracking-wider font-bold mb-0.5">Full Name</span> <span className="dark:text-zinc-200">{user.verificationData.fullName}</span></div>
+                    <div><span className="text-zinc-500 block text-[11px] uppercase tracking-wider font-bold mb-0.5">Phone</span> <span className="dark:text-zinc-200">{user.verificationData.phoneNumber}</span></div>
+                    <div className="col-span-2"><span className="text-zinc-500 block text-[11px] uppercase tracking-wider font-bold mb-0.5">Address</span> <span className="dark:text-zinc-200">{user.verificationData.address}</span></div>
+                    <div><span className="text-zinc-500 block text-[11px] uppercase tracking-wider font-bold mb-0.5">NID / BID</span> <span className="dark:text-zinc-200">{user.verificationData.nidBid}</span></div>
+                    <div><span className="text-zinc-500 block text-[11px] uppercase tracking-wider font-bold mb-0.5">DOB</span> <span className="dark:text-zinc-200">{user.verificationData.birthDate}</span></div>
+                    <div className="col-span-2 mt-2 pt-2 border-t border-zinc-200 dark:border-zinc-800 grid grid-cols-2 gap-3">
+                      <div><span className="text-amber-500 block text-[11px] uppercase tracking-wider font-bold mb-0.5">Nagad Number</span> <span className="dark:text-zinc-200 font-mono text-xs">{user.verificationData.nagadNumber}</span></div>
+                      <div><span className="text-amber-500 block text-[11px] uppercase tracking-wider font-bold mb-0.5">TrxID</span> <span className="dark:text-zinc-200 font-mono text-xs">{user.verificationData.transactionId}</span></div>
+                    </div>
+                  </div>
+                )}
               </div>
-              <div className="flex gap-2">
-                <button onClick={() => handleAction(user.id, 'accepted')} className="bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold">Accept</button>
-                <button onClick={() => handleAction(user.id, 'rejected')} className="bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold">Reject</button>
+            ))}
+            {pendingRequests.length === 0 && (
+              <div className="text-center py-12 text-zinc-500 border border-dashed border-zinc-300 dark:border-zinc-800 rounded-xl font-medium">
+                No pending requests in the queue
               </div>
-            </div>
-          ))}
-          {requests.length === 0 && (
-            <div className="text-center py-10 text-zinc-500 border border-dashed border-zinc-300 dark:border-zinc-800 rounded-xl">
-              No pending requests
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
+
+        {tab === 'verified' && (
+          <div className="flex flex-col gap-4">
+             <h2 className="font-bold text-xl dark:text-white mb-2">Verified Users</h2>
+             <div className="flex flex-col gap-3">
+               {verifiedUsers.map(user => (
+                 <div key={user.id} className="p-4 border border-zinc-200 dark:border-zinc-800 rounded-xl flex items-center justify-between bg-white dark:bg-zinc-950">
+                   <div className="flex items-center gap-3">
+                     <img src={user.avatar || undefined} className="w-10 h-10 rounded-full bg-zinc-200 dark:bg-zinc-800 object-cover" />
+                     <div className="flex flex-col">
+                       <span className="font-bold text-zinc-900 dark:text-zinc-100 text-[14px] flex items-center gap-1">
+                         {user.name} <VerifiedBadge isVerified={true} />
+                       </span>
+                       <span className="text-zinc-500 text-[12px] font-medium">@{user.username}</span>
+                     </div>
+                   </div>
+                   <div className="flex items-center gap-3">
+                     <div className="text-right flex flex-col text-[11px] font-semibold text-zinc-400">
+                       {user.verifiedUntil && (
+                         <span className="text-amber-600 dark:text-amber-400">
+                           Expires: {user.verifiedUntil?.toDate?.() ? user.verifiedUntil.toDate().toLocaleDateString() : (user.verifiedUntil as Date).toLocaleDateString()}
+                         </span>
+                       )}
+                     </div>
+                     <button onClick={() => handleRemoveVerified(user.id)} className="px-3 py-1.5 text-[12px] font-bold text-rose-500 bg-rose-50 dark:bg-rose-900/20 hover:bg-rose-100 dark:hover:bg-rose-900/40 rounded-lg transition-colors">Revoke</button>
+                   </div>
+                 </div>
+               ))}
+               {verifiedUsers.length === 0 && (
+                 <div className="text-center py-12 text-zinc-500 border border-dashed border-zinc-300 dark:border-zinc-800 rounded-xl font-medium">
+                   No verified users found
+                 </div>
+               )}
+             </div>
+          </div>
+        )}
+
+        {tab === 'reports' && (
+          <div className="flex flex-col gap-4">
+             <h2 className="font-bold text-xl dark:text-white mb-2">User Reports</h2>
+             <div className="flex flex-col gap-3">
+               {reports.map(report => {
+                 const reportedUser = users.find(u => u.id === report.reportedUserId);
+                 return (
+                   <div key={report.id} className={cn("p-4 border rounded-xl flex flex-col gap-3", report.status === 'resolved' ? "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900" : "border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-900/10")}>
+                     <div className="flex items-center justify-between">
+                       <div className="flex items-center gap-2">
+                         <span className="font-bold text-[14px] text-zinc-900 dark:text-zinc-100">Report #{report.id.slice(-6)}</span>
+                         <span className={cn("px-2 py-0.5 rounded-full text-[10px] font-bold uppercase", report.status === 'resolved' ? "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400" : "bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400")}>
+                           {report.status}
+                         </span>
+                       </div>
+                       <span className="text-[12px] text-zinc-500">{formatDistanceToNow(report.createdAt as Date)} ago</span>
+                     </div>
+                     <div className="text-[13px] text-zinc-700 dark:text-zinc-300">
+                       <span className="font-semibold text-zinc-900 dark:text-zinc-100">Reason:</span> {report.reason}
+                     </div>
+                     {reportedUser && (
+                       <div className="flex items-center gap-3 p-2 bg-white dark:bg-zinc-950 rounded-lg border border-zinc-100 dark:border-zinc-800">
+                         <img src={reportedUser.avatar || undefined} className="w-8 h-8 rounded-full" />
+                         <div className="flex flex-col flex-1">
+                           <span className="font-bold text-[13px]">{reportedUser.name}</span>
+                           <span className="text-[11px] text-zinc-500">@{reportedUser.username} • {reportedUser.reportCount || 0} reports</span>
+                         </div>
+                       </div>
+                     )}
+                     {report.status !== 'resolved' && (
+                       <div className="flex gap-2 justify-end mt-2">
+                         <button onClick={() => handleResolveReport(report.id)} className="px-3 py-1.5 text-[12px] font-bold bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg transition-colors">Resolve</button>
+                         {reportedUser && <button onClick={() => handleBanUser(reportedUser.id, false)} className="px-3 py-1.5 text-[12px] font-bold bg-orange-500 hover:bg-orange-600 text-white rounded-lg transition-colors">Ban 7 Days</button>}
+                         {reportedUser && <button onClick={() => handleBanUser(reportedUser.id, true)} className="px-3 py-1.5 text-[12px] font-bold bg-rose-500 hover:bg-rose-600 text-white rounded-lg transition-colors">Ban Permanently</button>}
+                       </div>
+                     )}
+                   </div>
+                 );
+               })}
+               {reports.length === 0 && (
+                 <div className="text-center py-12 text-zinc-500 border border-dashed border-zinc-300 dark:border-zinc-800 rounded-xl font-medium">
+                   No reports found
+                 </div>
+               )}
+             </div>
+          </div>
+        )}
+
+        {tab === 'users' && (
+          <div className="flex flex-col gap-4">
+             <h2 className="font-bold text-xl dark:text-white mb-2">User Registry</h2>
+             <div className="flex flex-col gap-3">
+               {users.map(user => (
+                 <div key={user.id} className="p-4 border border-zinc-200 dark:border-zinc-800 rounded-xl flex items-center justify-between bg-white dark:bg-zinc-950">
+                   <div className="flex items-center gap-3">
+                     <img src={user.avatar || undefined} className="w-10 h-10 rounded-full bg-zinc-200 dark:bg-zinc-800 object-cover" />
+                     <div className="flex flex-col">
+                       <span className="font-bold text-zinc-900 dark:text-zinc-100 text-[14px] flex items-center gap-1">
+                         {user.name} {user.isVerified && <span className="w-3.5 h-3.5 bg-blue-500 rounded-full flex items-center justify-center text-white text-[8px]"><Check size={8} strokeWidth={4}/></span>}
+                       </span>
+                       <span className="text-zinc-500 text-[12px] font-medium">
+                          @{user.username} 
+                          {user.bannedUntil && (user.bannedUntil?.toDate?.() || user.bannedUntil) > new Date() && <span className="text-rose-500 font-bold tracking-wide uppercase ml-1">Banned</span>}
+                       </span>
+                     </div>
+                   </div>
+                   <div className="flex items-center gap-3">
+                     <div className="text-right flex flex-col text-[11px] font-semibold text-zinc-400">
+                       <span>{user.followers?.length || 0} Followers</span>
+                       <span>ID: {user.id.slice(0, 6)}...</span>
+                     </div>
+                     <button onClick={() => handleDeleteUser(user.id)} className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"><X size={18} /></button>
+                   </div>
+                 </div>
+               ))}
+             </div>
+          </div>
+        )}
       </div>
     </motion.div>
   );
@@ -864,10 +1260,30 @@ const EditProfileScreen = () => {
   const [bio, setBio] = useState(currentUser?.bio || '');
   const [avatar, setAvatar] = useState(currentUser?.avatar || '');
   const [isUploading, setIsUploading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
-  const handleSave = () => {
-    updateProfile({ name, username, bio, avatar });
+  const handleSave = async () => {
+    if (!username.trim() || !name.trim()) {
+      showToast('Name and username are required');
+      return;
+    }
+    
+    setIsSaving(true);
+    let finalUsername = username.trim().toLowerCase();
+    
+    if (finalUsername !== currentUser?.username) {
+       const qUser = query(collection(db, 'users'), where('username', '==', finalUsername));
+       const docs = await getDocs(qUser);
+       if (!docs.empty) {
+           showToast('Username already taken');
+           setIsSaving(false);
+           return;
+       }
+    }
+    
+    updateProfile({ name, username: finalUsername, bio, avatar });
     showToast('Profile updated!');
+    setIsSaving(false);
     navigate('/profile');
   };
 
@@ -891,7 +1307,7 @@ const EditProfileScreen = () => {
       <header className="flex items-center justify-between px-5 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black/90 backdrop-blur-md sticky top-0 z-10 shrink-0">
         <button onClick={() => navigate(-1)} className="text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 hover:text-black dark:text-white transition-colors"><ChevronLeft size={24} /></button>
         <span className="font-bold text-[15px] tracking-wide text-zinc-900 dark:text-zinc-100">Edit Profile</span>
-        <button onClick={handleSave} disabled={isUploading} className="font-bold text-[13px] uppercase tracking-wider text-indigo-400 hover:text-indigo-300 disabled:opacity-50">Save</button>
+        <button onClick={handleSave} disabled={isUploading || isSaving} className="font-bold text-[13px] uppercase tracking-wider text-indigo-400 hover:text-indigo-300 disabled:opacity-50">Save</button>
       </header>
 
       <div className="flex-1 overflow-y-auto px-5 py-6 flex flex-col gap-6">
@@ -1691,8 +2107,12 @@ const StoriesBar = () => {
 };
 
 const FeedScreen = () => {
-  const { posts, followingIds, currentUser, showToast, theme, setTheme } = useApp();
-  const [feedType, setFeedType] = useState<'foryou' | 'following'>('foryou');
+  const { posts, followingIds, currentUser, showToast, theme, setTheme, notifications, chats } = useApp();
+  const [feedType, setFeedType] = useState<'latest' | 'following'>('latest');
+  const [sessionSeed] = useState(() => Math.random() * 1000);
+  
+  const unseenNotificationCount = notifications.filter(n => !n.read).length;
+  const unseenMessageCount = chats.filter(c => currentUser && (!c.seenBy || !c.seenBy.includes(currentUser.id)) && c.lastMessage).length;
   
   const displayPosts = React.useMemo(() => {
     if (feedType === 'following') {
@@ -1700,50 +2120,63 @@ const FeedScreen = () => {
         .filter(p => followingIds.includes(p.userId) || p.userId === currentUser?.id)
         .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
     } else {
-      // Random feed
+      // Latest feed
+      const latest = [...posts].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()).slice(0, 50);
+      
       const getHash = (str: string) => {
         let h = 0;
         for (let i = 0; i < str.length; i++) h = Math.imul(31, h) + str.charCodeAt(i) | 0;
         return Math.abs(h);
       };
 
-      const hour = new Date().getHours();
-      
-      const randomizedPosts = posts.map(post => {
-        const hash = getHash(post.id);
-        const pseudoRandom = Math.sin(hash + hour) * 10000;
-        const score = pseudoRandom - Math.floor(pseudoRandom);
-        return { post, score };
-      });
-
-      return randomizedPosts
+      return latest
+        .map(post => {
+          const hash = getHash(post.id);
+          const pseudoRandom = Math.sin(hash + sessionSeed) * 10000;
+          const score = pseudoRandom - Math.floor(pseudoRandom);
+          return { post, score };
+        })
         .sort((a, b) => b.score - a.score)
         .map(p => p.post);
     }
-  }, [posts, followingIds, currentUser, feedType]);
+  }, [posts, followingIds, currentUser, feedType, sessionSeed]);
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex-1 flex flex-col min-h-0 bg-white dark:bg-black">
       <header className="px-5 pt-4 pb-2 flex flex-col border-b border-zinc-200 dark:border-zinc-800 sticky top-0 bg-white/90 dark:bg-black/90 backdrop-blur-md z-40 shrink-0">
         <div className="flex justify-between items-center mb-3">
           <span className="font-bold text-xl italic text-zinc-900 dark:text-zinc-100">FineWord</span>
-          <div className="flex gap-4 items-center">
+          <div className="flex gap-4 items-center mt-1 lg:hidden">
             <button 
               onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')} 
               className="text-zinc-700 dark:text-zinc-300 hover:text-black dark:hover:text-white transition-colors"
             >
               {theme === 'light' ? <Moon size={22} /> : <Sun size={22} />}
             </button>
-            <Link to="/notifications"><Heart size={24} className="text-zinc-700 dark:text-zinc-300 hover:text-black dark:hover:text-white transition-colors" /></Link>
-            <Link to="/chat"><MessageCircle size={24} className="text-zinc-700 dark:text-zinc-300 hover:text-black dark:hover:text-white transition-colors" /></Link>
+            <Link to="/notifications" className="relative">
+              <Heart size={24} className="text-zinc-700 dark:text-zinc-300 hover:text-black dark:hover:text-white transition-colors" />
+              {unseenNotificationCount > 0 && (
+                <div className="absolute -top-1.5 -right-2 h-[18px] min-w-[18px] px-1 bg-red-500 rounded-full border border-white dark:border-black flex items-center justify-center text-[10px] font-bold text-white pointer-events-none shadow-sm">
+                  {unseenNotificationCount > 99 ? '99+' : unseenNotificationCount}
+                </div>
+              )}
+            </Link>
+            <Link to="/chat" className="relative">
+              <MessageCircle size={24} className="text-zinc-700 dark:text-zinc-300 hover:text-black dark:hover:text-white transition-colors" />
+              {unseenMessageCount > 0 && (
+                <div className="absolute -top-1.5 -right-2 h-[18px] min-w-[18px] px-1 bg-red-500 rounded-full border border-white dark:border-black flex items-center justify-center text-[10px] font-bold text-white pointer-events-none shadow-sm">
+                   {unseenMessageCount > 99 ? '99+' : unseenMessageCount}
+                </div>
+              )}
+            </Link>
           </div>
         </div>
         <div className="flex gap-4 px-1">
           <button 
-            onClick={() => setFeedType('foryou')} 
-            className={cn("pb-2 px-2 text-[14px] font-bold transition-colors border-b-2", feedType === 'foryou' ? "border-black dark:border-white text-black dark:text-white" : "border-transparent text-zinc-500")}
+            onClick={() => setFeedType('latest')} 
+            className={cn("pb-2 px-2 text-[14px] font-bold transition-colors border-b-2", feedType === 'latest' ? "border-black dark:border-white text-black dark:text-white" : "border-transparent text-zinc-500")}
           >
-            For You
+            Latest
           </button>
           <button 
             onClick={() => setFeedType('following')} 
@@ -1820,26 +2253,36 @@ const NotificationsScreen = () => {
         ) : (
           <div className="divide-y divide-zinc-100 dark:divide-zinc-900">
             {notifications.map(n => {
-              const actor = actors[n.actorId] || { name: 'Someone', avatar: '' };
+              const isSystem = n.type === 'system';
+              const actor = isSystem 
+                ? { name: 'System', avatar: 'https://cdn-icons-png.flaticon.com/512/3652/3652191.png' } 
+                : actors[n.actorId] || { name: 'Someone', avatar: '' };
               return (
                 <div 
                   key={n.id} 
                   onClick={() => handleRead(n)}
                   className={cn("flex items-center gap-4 px-5 py-4 cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-900/50 transition-colors", !n.read && "bg-indigo-50/50 dark:bg-indigo-900/10")}
                 >
-                  <img src={actor.avatar || undefined} alt="" className="w-10 h-10 rounded-full bg-zinc-200 dark:bg-zinc-800" />
+                  {isSystem ? (
+                    <div className="w-10 h-10 rounded-full bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-500 shrink-0">
+                      <Trophy size={18} />
+                    </div>
+                  ) : (
+                    <img src={actor.avatar || undefined} alt="" className="w-10 h-10 rounded-full bg-zinc-200 dark:bg-zinc-800 shrink-0" />
+                  )}
                   <div className="flex-1 text-[14px]">
                     <span className="font-semibold text-zinc-900 dark:text-zinc-100 mr-1">{actor.name}</span>
                     <span className="text-zinc-600 dark:text-zinc-400">
                       {n.type === 'like' && 'liked your post.'}
                       {n.type === 'comment' && 'commented on your post.'}
                       {n.type === 'follow' && 'started following you.'}
+                      {n.type === 'system' && n.message}
                     </span>
                     <div className="text-[12px] text-zinc-500 mt-0.5">
                       {formatDistanceToNow(n.createdAt, { addSuffix: true })}
                     </div>
                   </div>
-                  {!n.read && <div className="w-2 h-2 rounded-full bg-indigo-500" />}
+                  {!n.read && <div className="w-2 h-2 rounded-full bg-indigo-500 shrink-0" />}
                 </div>
               );
             })}
@@ -1854,7 +2297,7 @@ const CreateGroupChatScreen = () => {
   const { currentUser } = useApp();
   const navigate = useNavigate();
   const [users, setUsers] = useState<User[]>([]);
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [selectedUsers, setSelectedUsers] = useState<User[]>([]);
   const [queryText, setQueryText] = useState('');
   const [groupName, setGroupName] = useState('');
   const [isCreating, setIsCreating] = useState(false);
@@ -1882,10 +2325,10 @@ const CreateGroupChatScreen = () => {
   }, [queryText, currentUser]);
 
   const handleCreate = async () => {
-    if (!currentUser || selectedIds.length === 0 || !groupName.trim() || isCreating) return;
+    if (!currentUser || selectedUsers.length === 0 || !groupName.trim() || isCreating) return;
     setIsCreating(true);
     try {
-      const allUsers = [currentUser.id, ...selectedIds];
+      const allUsers = [currentUser.id, ...selectedUsers.map(u => u.id)];
       const chatId = `group_${Date.now()}`;
       await setDoc(doc(db, 'chats', chatId), {
         id: chatId,
@@ -1903,6 +2346,14 @@ const CreateGroupChatScreen = () => {
     }
   };
 
+  const toggleUser = (u: User) => {
+    setSelectedUsers(prev => {
+      const exists = prev.find(user => user.id === u.id);
+      if (exists) return prev.filter(user => user.id !== u.id);
+      return [...prev, u];
+    });
+  };
+
   return (
     <motion.div initial={{ x: 50, opacity: 0 }} animate={{ x: 0, opacity: 1 }} className="flex-1 flex flex-col min-h-0 bg-white dark:bg-black absolute inset-0 z-50">
       <header className="flex items-center justify-between px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black/90 backdrop-blur-md sticky top-0 z-10 shrink-0">
@@ -1912,7 +2363,7 @@ const CreateGroupChatScreen = () => {
         </div>
         <button 
           onClick={handleCreate}
-          disabled={selectedIds.length === 0 || !groupName.trim() || isCreating}
+          disabled={selectedUsers.length === 0 || !groupName.trim() || isCreating}
           className="text-indigo-600 font-bold disabled:opacity-50 text-[14px]"
         >
           Create
@@ -1928,42 +2379,58 @@ const CreateGroupChatScreen = () => {
             onChange={e => setGroupName(e.target.value)}
             className="w-full bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 outline-none text-black dark:text-white"
           />
-          <div className="w-full bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 flex items-center gap-3">
-            <Search size={20} className="text-zinc-500" />
+          <div className="w-full relative">
+            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-900 dark:text-zinc-100 font-medium">To:</span>
             <input 
               type="text" 
-              placeholder="Search users to add..." 
+              placeholder="Search..." 
               value={queryText}
               onChange={e => setQueryText(e.target.value)}
-              className="bg-transparent border-none outline-none text-black dark:text-white w-full placeholder:text-zinc-500 min-w-0"
+              className="w-full bg-transparent border-none outline-none text-black dark:text-white py-3 pl-12 pr-4 min-w-0"
             />
           </div>
         </div>
-        
-        {selectedIds.length > 0 && (
-          <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 font-medium text-sm text-zinc-600 dark:text-zinc-400">
-            {selectedIds.length} selected
+
+        {selectedUsers.length > 0 && (
+          <div className="p-4 border-b border-zinc-200 dark:border-zinc-800">
+             <div className="flex gap-4 overflow-x-auto no-scrollbar scroll-smooth">
+              {selectedUsers.map(u => (
+                <div key={`sel_${u.id}`} className="flex flex-col items-center gap-1 shrink-0 relative group">
+                  <div className="w-14 h-14 relative">
+                    <img src={u.avatar || undefined} className="w-14 h-14 rounded-full object-cover bg-zinc-200 dark:bg-zinc-800" />
+                    <button 
+                      onClick={() => toggleUser(u)} 
+                      className="absolute -top-1 -right-1 w-5 h-5 bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 rounded-full flex items-center justify-center border-2 border-white dark:border-black"
+                    >
+                      <X size={12} strokeWidth={3} />
+                    </button>
+                  </div>
+                  <span className="text-[12px] font-medium text-zinc-900 dark:text-zinc-100 w-16 text-center truncate">{u.name.split(' ')[0]}</span>
+                </div>
+              ))}
+             </div>
           </div>
         )}
 
-        <div className="flex flex-col p-4 gap-2">
+        {users.length === 0 && queryText.length > 0 && (
+           <p className="text-zinc-500 text-center p-6 text-[14px]">No accounts found.</p>
+        )}
+
+        <div className="flex flex-col p-2">
           {users.map(u => {
-            const isSelected = selectedIds.includes(u.id);
+            const isSelected = selectedUsers.some(user => user.id === u.id);
             return (
-              <div key={u.id} className="flex items-center gap-3 hover:bg-zinc-100 dark:hover:bg-zinc-900/50 p-2 rounded-xl cursor-pointer" onClick={() => {
-                if (isSelected) {
-                  setSelectedIds(prev => prev.filter(id => id !== u.id));
-                } else {
-                  setSelectedIds(prev => [...prev, u.id]);
-                }
-              }}>
-                <img src={u.avatar || undefined} className="w-12 h-12 rounded-full object-cover bg-zinc-200 dark:bg-zinc-800" />
-                <div className="flex-1 min-w-0">
-                  <p className="font-bold text-[14px] text-zinc-900 dark:text-zinc-100 truncate">{u.name}</p>
-                  <p className="text-[12px] text-zinc-500 truncate">@{u.username}</p>
+              <div key={u.id} className="flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-colors active:bg-zinc-100 dark:active:bg-zinc-900" onClick={() => toggleUser(u)}>
+                <img src={u.avatar || undefined} className="w-12 h-12 rounded-full object-cover bg-zinc-200 dark:bg-zinc-800 shrink-0" />
+                <div className="flex-1 min-w-0 flex flex-col justify-center">
+                  <p className="font-bold text-[14px] text-zinc-900 dark:text-zinc-100 flex items-center shrink-0">
+                    <span className="truncate">{u.name}</span>
+                    <VerifiedBadge isVerified={u.isVerified} />
+                  </p>
+                  <p className="text-[14px] text-zinc-500 truncate">{u.username}</p>
                 </div>
-                <div className={cn("w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors", isSelected ? "bg-indigo-600 border-indigo-600" : "border-zinc-300 dark:border-zinc-700")}>
-                  {isSelected && <Check size={14} className="text-white" />}
+                <div className={cn("w-6 h-6 rounded-full border flex items-center justify-center shrink-0", isSelected ? "bg-indigo-500 border-indigo-500 text-white" : "border-zinc-300 dark:border-zinc-700")}>
+                  {isSelected && <Check size={16} strokeWidth={3} />}
                 </div>
               </div>
             );
@@ -2061,6 +2528,23 @@ const ChatListScreen = () => {
   );
 };
 
+const HighlightedText = ({ text, highlight }: { text: string, highlight: string }) => {
+  if (!highlight.trim()) return <span>{text}</span>;
+  const regex = new RegExp(`(${highlight})`, 'gi');
+  const parts = text.split(regex);
+  return (
+    <span>
+      {parts.map((part, i) => 
+        regex.test(part) ? (
+          <span key={i} className="bg-yellow-300 dark:bg-yellow-600 text-black dark:text-white rounded-[2px] px-[2px]">{part}</span>
+        ) : (
+          <span key={i}>{part}</span>
+        )
+      )}
+    </span>
+  );
+};
+
 const ChatRoomScreen = () => {
   const { chats, sendMessage, currentUser } = useApp();
   const navigate = useNavigate();
@@ -2073,8 +2557,11 @@ const ChatRoomScreen = () => {
   const [text, setText] = useState('');
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
   
-  useEffect(() => {
-    if (!chat || !currentUser) return;
+    const [searchQuery, setSearchQuery] = useState('');
+    const [isSearching, setIsSearching] = useState(false);
+  
+    useEffect(() => {
+      if (!chat || !currentUser) return;
     const fetchUsers = async () => {
       const usersToFetch = chat.users.filter(u => u !== currentUser.id);
       const newChatUsers: Record<string, User> = {};
@@ -2159,13 +2646,46 @@ const ChatRoomScreen = () => {
             <p className="text-[12px] font-medium text-zinc-500 dark:text-zinc-400 truncate">{headerSubtitle}</p>
           </div>
         </Link>
+        <button 
+          onClick={() => {
+            setIsSearching(!isSearching);
+            if (isSearching) setSearchQuery('');
+          }} 
+          className={cn("p-2 rounded-full transition-colors", isSearching ? "text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30" : "text-zinc-500 hover:text-black dark:text-zinc-400 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-900")}
+        >
+          <Search size={20} />
+        </button>
       </header>
+
+      {isSearching && (
+        <div className="px-4 py-2 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 sticky top-[65px] z-10 shrink-0">
+          <div className="relative">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+            <input 
+              type="text" 
+              placeholder="Search in conversation..." 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-lg pl-9 pr-8 py-1.5 text-[14px] outline-none text-black dark:text-white focus:border-indigo-500 dark:focus:border-indigo-500 transition-colors"
+              autoFocus
+            />
+            {searchQuery && (
+              <button 
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
       
       <div className="flex-1 overflow-y-auto px-4 pt-6 pb-6 flex flex-col">
-        {chatMessages.map((msg, index) => {
+        {chatMessages.filter(msg => !searchQuery || msg.text.toLowerCase().includes(searchQuery.toLowerCase())).map((msg, index, filteredArray) => {
           const isMe = msg.senderId === currentUser?.id;
-          const prevMsg = chatMessages[index - 1];
-          const nextMsg = chatMessages[index + 1];
+          const prevMsg = filteredArray[index - 1];
+          const nextMsg = filteredArray[index + 1];
           
           const isSameSenderAsPrev = prevMsg && prevMsg.senderId === msg.senderId;
           const isSameSenderAsNext = nextMsg && nextMsg.senderId === msg.senderId;
@@ -2211,7 +2731,7 @@ const ChatRoomScreen = () => {
                     {msg.imageUrl ? (
                       <img src={msg.imageUrl || undefined} className="rounded-xl w-full max-w-[240px] max-h-[300px] object-cover" />
                     ) : (
-                      msg.text
+                      <HighlightedText text={msg.text} highlight={searchQuery} />
                     )}
                   </div>
                   <span className={cn(
@@ -2267,10 +2787,11 @@ const ChatRoomScreen = () => {
 };
 
 const SearchScreen = () => {
-  const [queryText, setQueryText] = useState('');
+  const [searchParams] = useSearchParams();
+  const [queryText, setQueryText] = useState(searchParams.get('q') || '');
   const [users, setUsers] = useState<User[]>([]);
   const { currentUser, posts } = useApp();
-  const [tab, setTab] = useState<'users'|'posts'>('users');
+  const [tab, setTab] = useState<'users'|'posts'>(searchParams.get('q') ? 'posts' : 'users');
 
   useEffect(() => {
     if (!queryText.trim() || tab !== 'users') {
@@ -2356,6 +2877,7 @@ const CreatePostScreen = () => {
   const [caption, setCaption] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [isUploading, setIsUploading] = useState(false);
+  const [isItalic, setIsItalic] = useState(false);
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -2384,6 +2906,7 @@ const CreatePostScreen = () => {
       likes: 0,
       likedBy: [],
       createdAt: serverTimestamp(),
+      isItalic: !imageUrl ? isItalic : false,
     };
     try {
       await setDoc(doc(db, 'posts', postId), newPost);
@@ -2405,15 +2928,28 @@ const CreatePostScreen = () => {
       </header>
       
       <div className="flex-1 overflow-y-auto flex flex-col p-4">
-        <div className="flex gap-4 items-start pb-4 border-b border-zinc-200 dark:border-zinc-800/50 mb-4 shrink-0">
-          <img src={currentUser?.avatar || undefined} alt="" className="w-10 h-10 rounded-full bg-zinc-200 dark:bg-zinc-800 object-cover shrink-0" />
-          <textarea
-            value={caption}
-            onChange={e => setCaption(e.target.value)}
-            placeholder="Write a caption... (optional if you add an image)"
-            className="bg-transparent flex-1 resize-none outline-none text-[15px] min-h-[100px] border-none text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-500 dark:text-zinc-500 font-medium pt-2"
-            autoFocus
-          />
+        <div className="flex gap-4 items-start pb-4 border-b border-zinc-200 dark:border-zinc-800/50 mb-4 shrink-0 flex-col">
+          <div className="flex gap-4 items-start w-full">
+            <img src={currentUser?.avatar || undefined} alt="" className="w-10 h-10 rounded-full bg-zinc-200 dark:bg-zinc-800 object-cover shrink-0" />
+            <textarea
+              value={caption}
+              onChange={e => setCaption(e.target.value)}
+              placeholder="Write a caption... (optional if you add an image)"
+              className={cn("bg-transparent flex-1 resize-none outline-none text-[15px] min-h-[100px] border-none text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-500 font-medium pt-2", isItalic && !imageUrl && "italic")}
+              autoFocus
+            />
+          </div>
+          {!imageUrl && (
+            <div className="flex w-full justify-end px-2">
+              <button
+                onClick={() => setIsItalic(!isItalic)}
+                className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-colors border", isItalic ? "bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800" : "bg-zinc-100 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-800")}
+              >
+                <Type size={14} className={isItalic ? "italic" : ""} />
+                Italic
+              </button>
+            </div>
+          )}
         </div>
 
         {!imageUrl ? (
@@ -2468,6 +3004,47 @@ const UserProfileScreen = () => {
 
   const [modalType, setModalType] = useState<'followers'|'following'|null>(null);
   const [modalUsers, setModalUsers] = useState<User[]>([]);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportReason, setReportReason] = useState('');
+
+  const handleReportUser = async () => {
+    if (!reportReason.trim() || !currentUser || !user) return;
+    try {
+      const reportId = `rep_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+      await setDoc(doc(db, 'reports', reportId), {
+        id: reportId,
+        reporterId: currentUser.id,
+        reportedUserId: user.id,
+        reason: reportReason,
+        createdAt: serverTimestamp(),
+        status: 'pending'
+      });
+      
+      const newReportCount = (user.reportCount || 0) + 1;
+      await updateDoc(doc(db, 'users', user.id), {
+        reportCount: newReportCount
+      });
+      
+      if (newReportCount === 5) {
+        const notifId = `sys_${Date.now()}_${Math.floor(Math.random() * 1000000)}`;
+        await setDoc(doc(db, 'notifications', notifId), {
+          id: notifId,
+          userId: user.id,
+          actorId: 'system',
+          type: 'system',
+          message: 'Warning: Your account has received multiple reports for violating our guidelines. Further reports may lead to an account ban.',
+          read: false,
+          createdAt: serverTimestamp()
+        });
+      }
+      
+      setShowReportModal(false);
+      setReportReason('');
+      showToast('Report submitted successfully');
+    } catch (e) {
+      showToast('Error submitting report');
+    }
+  };
 
   useEffect(() => {
     if (username) {
@@ -2586,8 +3163,14 @@ const UserProfileScreen = () => {
         <button onClick={() => navigate(-1)} className="text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 hover:text-black dark:text-white transition-colors w-6 flex justify-start">
           <ChevronLeft size={24} />
         </button>
-        <span className="font-bold text-[15px] tracking-wide text-zinc-900 dark:text-zinc-100">@{user.username}</span>
-        <div className="w-6" />
+        <span className="font-bold text-[15px] tracking-wide text-zinc-900 dark:text-zinc-100">@{user.username} {user.bannedUntil && (user.bannedUntil?.toDate?.() || user.bannedUntil) > new Date() && <span className="text-rose-500 font-bold ml-1 uppercase text-xs">(Banned)</span>}</span>
+        {currentUser?.id !== userId ? (
+          <button onClick={() => setShowReportModal(true)} className="text-rose-500 hover:text-rose-600 transition-colors bg-rose-50 dark:bg-rose-900/20 p-2 rounded-full flex justify-end">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"></polygon><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          </button>
+        ) : (
+          <div className="w-8" />
+        )}
       </header>
       
       <div className="flex-1 overflow-y-auto">
@@ -2634,7 +3217,7 @@ const UserProfileScreen = () => {
                     <div className="absolute inset-0 bg-white/0 dark:bg-black/0 group-hover:bg-white/20 dark:group-hover:bg-black/20 transition-colors" />
                   </>
                 ) : (
-                  <div className="absolute inset-0 flex items-center justify-center p-2 text-center text-[10px] sm:text-xs font-medium italic overflow-hidden break-words">{post.caption}</div>
+                  <div className={cn("absolute inset-0 flex items-center justify-center p-2 text-center text-[10px] sm:text-xs font-medium overflow-hidden break-words", post.isItalic && "italic")}>{formatTextHighlight(post.caption)}</div>
                 )}
               </div>
             ))
@@ -2642,6 +3225,36 @@ const UserProfileScreen = () => {
         </div>
       </div>
       <FollowListModal isOpen={modalType !== null} onClose={() => setModalType(null)} title={modalType === 'followers' ? 'Followers' : 'Following'} users={modalUsers} />
+      
+      {showReportModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-zinc-950 w-full max-w-sm rounded-[24px] p-6 flex flex-col gap-5 border border-zinc-200 dark:border-zinc-800 shadow-2xl relative">
+            <button onClick={() => setShowReportModal(false)} className="absolute top-4 right-4 p-2 text-zinc-500 hover:text-black dark:text-zinc-400 dark:hover:text-white transition-colors bg-zinc-100 dark:bg-zinc-900 rounded-full">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            </button>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-rose-100 dark:bg-rose-900/30 text-rose-500 flex items-center justify-center shrink-0">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+              </div>
+              <div>
+                <h3 className="text-[17px] font-bold text-zinc-900 dark:text-zinc-100">Report User</h3>
+                <p className="text-zinc-500 text-[13px] font-medium leading-snug tracking-wide mt-0.5">Help us keep the community safe.</p>
+              </div>
+            </div>
+            
+            <textarea 
+              value={reportReason} 
+              onChange={e => setReportReason(e.target.value)} 
+              placeholder="Please describe why you are reporting this user..."
+              className="mt-2 text-[14px] bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-3 outline-none min-h-[100px] resize-none text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400"
+            />
+            
+            <button onClick={handleReportUser} disabled={!reportReason.trim()} className="mt-2 bg-rose-500 hover:bg-rose-600 active:bg-rose-700 disabled:opacity-50 text-white font-bold text-[14px] py-3.5 rounded-xl transition-all shadow-md shadow-rose-500/20 w-full tracking-wide">
+              Submit Report
+            </button>
+          </div>
+        </div>
+      )}
     </motion.div>
   );
 };
@@ -2745,7 +3358,7 @@ const ProfileScreen = () => {
                     <div className="absolute inset-0 bg-white/0 dark:bg-black/0 group-hover:bg-white/20 dark:group-hover:bg-black/20 transition-colors" />
                   </>
                 ) : (
-                  <div className="absolute inset-0 flex items-center justify-center p-2 text-center text-[10px] sm:text-xs font-medium italic overflow-hidden break-words">{post.caption}</div>
+                  <div className={cn("absolute inset-0 flex items-center justify-center p-2 text-center text-[10px] sm:text-xs font-medium overflow-hidden break-words", post.isItalic && "italic")}>{formatTextHighlight(post.caption)}</div>
                 )}
               </div>
             ))
@@ -2866,9 +3479,24 @@ export default function App() {
               setTheme(userData.theme);
             }
           } else {
+            let baseUsername = user.email?.split('@')[0] || 'user';
+            baseUsername = baseUsername.toLowerCase();
+            let finalUsername = baseUsername;
+            let counter = 1;
+            
+            while (true) {
+                const qUser = query(collection(db, 'users'), where('username', '==', finalUsername));
+                const userDocs = await getDocs(qUser);
+                if (userDocs.empty) {
+                    break;
+                }
+                finalUsername = `${baseUsername}${counter}`;
+                counter++;
+            }
+            
             const newUser: User = {
               id: user.uid,
-              username: user.email?.split('@')[0] || 'user',
+              username: finalUsername,
               name: user.displayName || 'User',
               avatar: user.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.uid}`,
               bio: 'Welcome to FineWord'
@@ -3114,7 +3742,6 @@ export default function App() {
                   <AnimatePresence mode="wait">
                     <Routes>
                       <Route path="/" element={<FeedScreen />} />
-                      <Route path="/tournament" element={<TournamentPoster />} />
                       <Route path="/notifications" element={<NotificationsScreen />} />
                       <Route path="/search" element={<SearchScreen />} />
                       <Route path="/create" element={<CreatePostScreen />} />
