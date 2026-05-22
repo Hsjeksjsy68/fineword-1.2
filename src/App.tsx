@@ -5,7 +5,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Link, useNavigate, useLocation, useParams } from 'react-router-dom';
-import { Home, MessageCircle, User as UserIcon, Heart, Send, PlusSquare, Image as ImageIcon, ChevronLeft, MoreHorizontal, LogOut, Search, Moon, Sun, Share2, Music, Type, Palette, Check, BarChart2, X } from 'lucide-react';
+import { Home, MessageCircle, User as UserIcon, Heart, Send, PlusSquare, Image as ImageIcon, ChevronLeft, MoreHorizontal, LogOut, Search, Moon, Sun, Share2, Music, Type, Palette, Check, BarChart2, X, Trophy } from 'lucide-react';
+import { TournamentPoster } from './TournamentPoster';
 import { formatDistanceToNow, format, isSameDay } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
@@ -280,6 +281,7 @@ const SideNav = () => {
     { path: '/', icon: Home, label: 'Home' },
     { path: '/search', icon: Search, label: 'Search' },
     { path: '/create', icon: PlusSquare, label: 'Create' },
+    { path: '/tournament', icon: Trophy, label: 'Tournament' },
     { path: '/notifications', icon: Heart, label: 'Notifications' },
     { path: '/chat', icon: MessageCircle, hasUnseen: hasUnseenMessages, label: 'Messages' },
     { path: '/profile', icon: UserIcon, label: 'Profile' },
@@ -338,6 +340,7 @@ const BottomNav = () => {
     { path: '/', icon: Home },
     { path: '/search', icon: Search },
     { path: '/create', icon: PlusSquare },
+    { path: '/tournament', icon: Trophy },
     { path: '/chat', icon: MessageCircle, hasUnseen: hasUnseenMessages },
     { path: '/profile', icon: UserIcon },
   ];
@@ -1697,43 +1700,23 @@ const FeedScreen = () => {
         .filter(p => followingIds.includes(p.userId) || p.userId === currentUser?.id)
         .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
     } else {
-      // For You algorithm
-      const likedAuthorIds = new Set<string>();
-      posts.forEach(p => {
-        if (currentUser && p.likedBy.includes(currentUser.id)) {
-          likedAuthorIds.add(p.userId);
-        }
-      });
-
+      // Random feed
       const getHash = (str: string) => {
         let h = 0;
         for (let i = 0; i < str.length; i++) h = Math.imul(31, h) + str.charCodeAt(i) | 0;
         return Math.abs(h);
       };
 
-      const scoredPosts = posts.map(post => {
-        let score = 0;
-        const isMyPost = post.userId === currentUser?.id;
-        const isFollowed = followingIds.includes(post.userId);
-        const isAuthorLikedBefore = likedAuthorIds.has(post.userId);
-        
-        // Age score (0-10)
-        const maxAge = 7 * 24 * 60 * 60 * 1000; // 1 week
-        const age = new Date().getTime() - post.createdAt.getTime();
-        const timeScore = Math.max(0, 1 - age / maxAge);
-        
-        if (isMyPost) score -= 10; // slightly demote own posts in For You
-        if (isFollowed) score += 30;
-        if (isAuthorLikedBefore && !isFollowed) score += 50; // heavily promote authors they've liked
-        
-        score += post.likedBy.length * 5; // popularity
-        score += timeScore * 20; // freshness
-        score += getHash(post.id) % 25; // stable random factor for discovery
-
+      const hour = new Date().getHours();
+      
+      const randomizedPosts = posts.map(post => {
+        const hash = getHash(post.id);
+        const pseudoRandom = Math.sin(hash + hour) * 10000;
+        const score = pseudoRandom - Math.floor(pseudoRandom);
         return { post, score };
       });
 
-      return scoredPosts
+      return randomizedPosts
         .sort((a, b) => b.score - a.score)
         .map(p => p.post);
     }
@@ -3131,6 +3114,7 @@ export default function App() {
                   <AnimatePresence mode="wait">
                     <Routes>
                       <Route path="/" element={<FeedScreen />} />
+                      <Route path="/tournament" element={<TournamentPoster />} />
                       <Route path="/notifications" element={<NotificationsScreen />} />
                       <Route path="/search" element={<SearchScreen />} />
                       <Route path="/create" element={<CreatePostScreen />} />
