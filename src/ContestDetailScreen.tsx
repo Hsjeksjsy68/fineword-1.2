@@ -387,22 +387,28 @@ const MatchList = ({ matches, round, currentUser, users, isHost, contest }: { ma
   };
 
   const isRoundComplete = roundMatches.every(m => m.status === 'completed');
-  const canCompleteRound = isRoundComplete || (roundMatches.length > 0 && isHost && roundMatches.every(m => m.status !== 'pending' && m.user1Photo && m.user2Photo));
+  const hasTie = roundMatches.some(m => m.user1Votes.length === m.user2Votes.length);
+  const canCompleteRound = !isRoundComplete && roundMatches.length > 0 && isHost && roundMatches.every(m => m.status !== 'pending' && m.user1Photo && m.user2Photo);
 
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-500 to-purple-500">
-          Round {round}
-        </h2>
-        {isHost && !isRoundComplete && canCompleteRound && (
+        <div className="flex flex-col">
+          <h2 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-500 to-purple-500">
+            Round {round}
+          </h2>
+          {isHost && !isRoundComplete && hasTie && canCompleteRound && (
+             <span className="text-xs text-red-500 font-medium tracking-tight">Cannot continue: A match is currently tied.</span>
+          )}
+        </div>
+        {isHost && !isRoundComplete && canCompleteRound && !hasTie && (
           <button onClick={handleCompleteRound} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl font-bold text-[14px]">
             {roundMatches.length === 1 ? 'End Finale' : 'Next Round'}
           </button>
         )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="flex flex-col gap-6">
         {roundMatches.map(match => {
           const p1 = users.find(u => u.id === match.user1Id);
           const p2 = users.find(u => u.id === match.user2Id);
@@ -421,7 +427,7 @@ const MatchList = ({ matches, round, currentUser, users, isHost, contest }: { ma
                 </div>
               )}
               
-              <div className="flex h-[300px]">
+              <div className="flex aspect-[9/8]">
                 {/* Player 1 Side */}
                 <div className="flex-1 border-r border-zinc-200 dark:border-zinc-800 flex flex-col relative group">
                   <div className="absolute top-3 left-3 z-10 flex items-center gap-2 bg-white/90 dark:bg-black/80 backdrop-blur px-2.5 py-1.5 rounded-full shadow-sm text-[12px] font-bold text-zinc-900 dark:text-zinc-100">
