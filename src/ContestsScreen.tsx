@@ -206,20 +206,29 @@ export const ContestsScreen = () => {
               <div className="flex flex-col gap-2">
                 <label className="text-[13px] font-bold text-zinc-700 dark:text-zinc-300 ml-1">Cover Photo (Optional)</label>
                 {coverPhoto && (
-                  <div className="relative w-full h-32 rounded-xl overflow-hidden mt-1 mb-2">
+                  <div className="relative w-full h-40 rounded-xl overflow-hidden mt-1 mb-2 group">
                     <img src={coverPhoto} alt="Cover" className="w-full h-full object-cover" />
-                    <button 
-                      onClick={() => setCoverPhoto(null)} 
-                      className="absolute top-2 right-2 p-1.5 bg-black/50 text-white rounded-full hover:bg-black/70 flex items-center justify-center p-0 w-8 h-8"
-                    >
-                      <Trash2 size={16} />
-                    </button>
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                      <button 
+                        onClick={() => setCoverPhoto(null)} 
+                        className="p-3 bg-red-500 text-white rounded-full hover:bg-red-600 flex items-center justify-center shadow-lg transform hover:scale-110 transition-all"
+                      >
+                        <Trash2 size={20} />
+                      </button>
+                    </div>
                   </div>
                 )}
                 {!coverPhoto && (
-                  <label className="flex items-center gap-2 bg-zinc-100 dark:bg-zinc-900 p-3.5 rounded-xl cursor-pointer hover:bg-zinc-200 dark:hover:bg-zinc-800 transition text-[14px] font-medium text-zinc-600 dark:text-zinc-400">
-                    <ImageIcon size={18} />
-                    <span>Upload Cover Photo</span>
+                  <label 
+                    className="flex flex-col items-center justify-center gap-3 bg-zinc-50 dark:bg-zinc-900/50 border-2 border-dashed border-zinc-300 dark:border-zinc-700 p-8 rounded-xl cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-900 hover:border-zinc-400 dark:hover:border-zinc-500 transition-all"
+                  >
+                    <div className="w-12 h-12 bg-white dark:bg-black rounded-full shadow-sm flex items-center justify-center">
+                      <ImageIcon size={24} className="text-zinc-400" />
+                    </div>
+                    <div className="text-center">
+                      <span className="block font-bold text-zinc-700 dark:text-zinc-300">Upload from Gallery</span>
+                      <span className="block text-xs text-zinc-500 mt-1">Drag and drop or click to choose</span>
+                    </div>
                     <input type="file" accept="image/*" onChange={handleCoverPhotoUpload} className="hidden" />
                   </label>
                 )}

@@ -4,7 +4,7 @@ import { ChevronLeft, Check, X, Trophy, Upload, User, Users, Heart, Image as Ima
 import { useParams, useNavigate } from 'react-router-dom';
 import { doc, onSnapshot, updateDoc, collection, query, where, getDocs, addDoc, serverTimestamp, setDoc, deleteDoc } from 'firebase/firestore';
 import { db } from './firebase';
-import { useApp, Contest, ContestMatch, cn } from './App';
+import { useApp, Contest, ContestMatch, cn, resizeImage } from './App';
 import { format } from 'date-fns';
 
 export const ContestDetailScreen = () => {
@@ -523,20 +523,39 @@ const MatchList = ({ matches, round, currentUser, users, isHost, contest }: { ma
 };
 
 const UploadOverlay = ({ onUpload, onCancel }: { onUpload: (url: string) => void, onCancel: () => void }) => {
-  const [url, setUrl] = useState('');
+  const { showToast } = useApp();
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (!file.type.startsWith('image/')) {
+        showToast('Please select an image file');
+        return;
+      }
+      try {
+        const url = await resizeImage(file, 800, 800); 
+        onUpload(url);
+      } catch (err) {
+        showToast('Error attaching image');
+      }
+    }
+  };
   
   return (
-    <div className="absolute inset-0 bg-white/95 dark:bg-black/95 z-40 flex flex-col items-center justify-center p-4 border-2 border-dashed border-indigo-500/50 m-2 rounded-2xl">
-      <h4 className="font-bold mb-4 text-zinc-900 dark:text-zinc-100">Provide Image URL</h4>
-      <input 
-        value={url} onChange={e => setUrl(e.target.value)}
-        placeholder="https://images.unsplash..."
-        className="w-full bg-zinc-100 dark:bg-zinc-900 p-3 rounded-xl mb-4 text-sm outline-none border border-zinc-200 dark:border-zinc-800"
-      />
-      <div className="flex gap-2 w-full">
-        <button onClick={onCancel} className="flex-1 bg-zinc-100 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 py-2.5 rounded-xl font-bold text-sm">Cancel</button>
-        <button onClick={() => url && onUpload(url)} disabled={!url} className="flex-1 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white py-2.5 rounded-xl font-bold text-sm">Upload</button>
-      </div>
+    <div className="absolute inset-0 bg-white/95 dark:bg-black/95 z-40 flex flex-col items-center justify-center p-4 m-2 rounded-2xl backdrop-blur-md">
+      <label className="flex flex-col items-center justify-center gap-3 bg-zinc-50 dark:bg-zinc-900/80 border-2 border-dashed border-zinc-300 dark:border-zinc-700 w-full h-full rounded-xl cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all p-6">
+        <div className="w-12 h-12 bg-white dark:bg-black rounded-full shadow-sm flex items-center justify-center">
+          <ImageIcon size={24} className="text-zinc-400" />
+        </div>
+        <div className="text-center">
+          <span className="block font-bold text-zinc-700 dark:text-zinc-300">Upload Photo</span>
+          <span className="block text-xs text-zinc-500 mt-1">Tap to select from gallery</span>
+        </div>
+        <input type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
+      </label>
+      <button onClick={onCancel} className="absolute top-2 right-2 p-2 bg-black/10 dark:bg-white/10 hover:bg-black/20 dark:hover:bg-white/20 rounded-full transition-colors text-zinc-600 dark:text-zinc-300 z-50">
+        <X size={16} />
+      </button>
     </div>
   )
 };
