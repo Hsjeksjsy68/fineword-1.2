@@ -62,7 +62,7 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   throw new Error(errStr);
 }
 
-const resizeImage = (file: File, maxWidth: number, maxHeight: number): Promise<string> => {
+export const resizeImage = (file: File, maxWidth: number, maxHeight: number): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (event) => {
@@ -120,7 +120,15 @@ export function formatTextHighlight(text: string) {
 
 // --- MOCK DATA & TYPES ---
 
-type User = {
+export type Badge = {
+  id: string;
+  name: string;
+  icon: string;
+  contestId: string;
+  contestTitle: string;
+};
+
+export type User = {
   id: string;
   username: string;
   name: string;
@@ -142,6 +150,39 @@ type User = {
   deactivated?: boolean;
   bannedUntil?: Date | any;
   reportCount?: number;
+  badges?: Badge[];
+};
+
+export type Contest = {
+  id: string;
+  hostId: string;
+  title: string;
+  description: string;
+  badgeName: string;
+  badgeIcon: string;
+  maxParticipants: number;
+  status: 'recruiting' | 'active' | 'completed';
+  participants: string[]; 
+  requests: string[];
+  currentRound: number;
+  winnerId: string | null;
+  createdAt: Date | any;
+  coverPhoto?: string;
+};
+
+export type ContestMatch = {
+  id: string;
+  contestId: string;
+  round: number;
+  matchIndex: number;
+  user1Id: string | null;
+  user2Id: string | null;
+  user1Photo: string | null;
+  user2Photo: string | null;
+  user1Votes: string[];
+  user2Votes: string[];
+  winnerId: string | null;
+  status: 'pending' | 'active' | 'completed';
 };
 
 type Report = {
@@ -309,8 +350,8 @@ interface AppState {
   setTheme: (t: 'light' | 'dark') => void;
 }
 
-const AppContext = React.createContext<AppState | null>(null);
-const useApp = () => React.useContext(AppContext)!;
+export const AppContext = React.createContext<AppState | null>(null);
+export const useApp = () => React.useContext(AppContext)!;
 
 // --- COMPONENTS ---
 
@@ -325,6 +366,7 @@ const SideNav = () => {
     { path: '/', icon: Home, label: 'Home' },
     { path: '/search', icon: Search, label: 'Search' },
     { path: '/create', icon: PlusSquare, label: 'Create' },
+    { path: '/contests', icon: Trophy, label: 'Contests' },
     { path: '/notifications', icon: Heart, badgeCount: unseenNotificationCount, label: 'Notifications' },
     { path: '/chat', icon: MessageCircle, badgeCount: unseenMessageCount, label: 'Messages' },
     { path: '/profile', icon: UserIcon, label: 'Profile' },
@@ -385,6 +427,7 @@ const BottomNav = () => {
     { path: '/', icon: Home },
     { path: '/search', icon: Search },
     { path: '/create', icon: PlusSquare },
+    { path: '/contests', icon: Trophy },
     { path: '/chat', icon: MessageCircle, badgeCount: unseenMessageCount },
     { path: '/profile', icon: UserIcon },
   ];
@@ -2106,6 +2149,9 @@ const StoriesBar = () => {
   );
 };
 
+import { ContestsScreen } from './ContestsScreen';
+import { ContestDetailScreen } from './ContestDetailScreen';
+
 const FeedScreen = () => {
   const { posts, followingIds, currentUser, showToast, theme, setTheme, notifications, chats } = useApp();
   const [feedType, setFeedType] = useState<'latest' | 'following'>('latest');
@@ -3192,6 +3238,18 @@ const UserProfileScreen = () => {
             <VerifiedBadge isVerified={user.isVerified} />
           </h2>
           <p className="text-[14px] mt-2 text-zinc-700 dark:text-zinc-300 leading-relaxed max-w-[90%] break-words">{user.bio}</p>
+          
+          {user.badges && user.badges.length > 0 && (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {user.badges.map(badge => (
+                <div key={badge.id} className="flex items-center gap-1.5 bg-yellow-50 dark:bg-yellow-900/10 border border-yellow-200 dark:border-yellow-900/30 px-2.5 py-1 rounded-full" title={badge.contestTitle}>
+                  <span className="text-sm">{badge.icon}</span>
+                  <span className="text-[11px] font-bold text-yellow-700 dark:text-yellow-500 uppercase tracking-wider">{badge.name}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
           {currentUser?.id !== userId && (
             <div className="mt-6 flex gap-3">
               <button onClick={handleFollowToggle} disabled={loadingFollow} className={cn("flex-1 py-2.5 rounded-xl text-[12px] uppercase tracking-widest font-bold transition-all text-center", isFollowing ? 'bg-zinc-200 dark:bg-zinc-800 text-black dark:text-white hover:bg-zinc-300 dark:hover:bg-zinc-700' : 'bg-indigo-600 hover:bg-indigo-500 text-white')}>
@@ -3331,6 +3389,18 @@ const ProfileScreen = () => {
             <VerifiedBadge isVerified={currentUser.isVerified} />
           </h2>
           <p className="text-[14px] mt-2 text-zinc-700 dark:text-zinc-300 leading-relaxed max-w-[90%] break-words">{currentUser.bio}</p>
+
+          {currentUser.badges && currentUser.badges.length > 0 && (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {currentUser.badges.map(badge => (
+                <div key={badge.id} className="flex items-center gap-1.5 bg-yellow-50 dark:bg-yellow-900/10 border border-yellow-200 dark:border-yellow-900/30 px-2.5 py-1 rounded-full" title={badge.contestTitle}>
+                  <span className="text-sm">{badge.icon}</span>
+                  <span className="text-[11px] font-bold text-yellow-700 dark:text-yellow-500 uppercase tracking-wider">{badge.name}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
           <div className="mt-6 flex gap-3">
             <button onClick={() => navigate('/profile/edit')} className="flex-1 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-200 dark:bg-zinc-800 py-2.5 rounded-xl text-[12px] uppercase tracking-widest font-bold transition-all text-center text-zinc-700 dark:text-zinc-300 hover:text-black dark:text-white">Edit profile</button>
             <button onClick={() => {
@@ -3745,6 +3815,8 @@ export default function App() {
                       <Route path="/notifications" element={<NotificationsScreen />} />
                       <Route path="/search" element={<SearchScreen />} />
                       <Route path="/create" element={<CreatePostScreen />} />
+                      <Route path="/contests" element={<ContestsScreen />} />
+                      <Route path="/contest/:id" element={<ContestDetailScreen />} />
                       <Route path="/chat" element={<ChatListScreen />} />
                       <Route path="/chat/group/create" element={<CreateGroupChatScreen />} />
                       <Route path="/chat/:id" element={<ChatRoomScreen />} />

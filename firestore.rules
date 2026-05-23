@@ -57,7 +57,8 @@ service cloud.firestore {
         && (!('isVerified' in data) || data.isVerified is bool)
         && (!('verificationStatus' in data) || data.verificationStatus in ['none', 'pending', 'accepted', 'rejected'])
         && (!('verificationData' in data) || data.verificationData is map)
-        && (!('deactivated' in data) || data.deactivated is bool);
+        && (!('deactivated' in data) || data.deactivated is bool)
+        && (!('badges' in data) || data.badges is list);
     }
 
     function isValidPost(data) {
@@ -199,6 +200,11 @@ service cloud.firestore {
                       (
                         isAdmin()
                         && incoming().diff(existing()).affectedKeys().hasOnly(['isVerified', 'verificationStatus', 'deactivated'])
+                      )
+                      ||
+                      (
+                        isSignedIn()
+                        && incoming().diff(existing()).affectedKeys().hasOnly(['badges'])
                       )
                     );
 
@@ -375,6 +381,26 @@ service cloud.firestore {
                       && incoming().chatId == chatId
                       && incoming().createdAt == request.time;
       }
+    }
+
+    match /contests/{contestId} {
+      allow read: if isSignedIn();
+      allow list: if isSignedIn();
+      allow create: if isSignedIn()
+        && isValidId(contestId);
+      allow update: if isSignedIn()
+        && isValidId(contestId);
+      allow delete: if isSignedIn() && isOwner(existing().hostId);
+    }
+
+    match /contest_matches/{matchId} {
+      allow read: if isSignedIn();
+      allow list: if isSignedIn();
+      allow create: if isSignedIn()
+        && isValidId(matchId);
+      allow update: if isSignedIn()
+        && isValidId(matchId);
+      allow delete: if isSignedIn();
     }
   }
 }
