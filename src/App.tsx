@@ -151,6 +151,7 @@ export type User = {
   bannedUntil?: Date | any;
   reportCount?: number;
   badges?: Badge[];
+  hideBadges?: boolean;
 };
 
 export type Contest = {
@@ -259,6 +260,8 @@ type Message = {
   senderId: string;
   text: string;
   imageUrl?: string;
+  videoUrl?: string; // NEW
+  isDeleted?: boolean; // NEW
   createdAt: Date;
 };
 
@@ -276,6 +279,8 @@ type Notification = {
 type Chat = {
   id: string;
   users: string[];
+  admins?: string[]; // NEW
+  onlyAdminsCanAddMembers?: boolean; // NEW
   lastMessage: string;
   updatedAt: Date;
   seenBy?: string[];
@@ -344,7 +349,8 @@ interface AppState {
   notifications: Notification[];
   followingIds: string[];
   toggleLike: (postId: string) => void;
-  sendMessage: (chatId: string, text: string, imageUrl?: string) => void;
+  sendMessage: (chatId: string, text: string, imageUrl?: string, videoUrl?: string) => void;
+  deleteMessage: (chatId: string, msgId: string) => void;
   showToast: (msg: string) => void;
   theme: 'light' | 'dark';
   setTheme: (t: 'light' | 'dark') => void;
@@ -357,7 +363,7 @@ export const useApp = () => React.useContext(AppContext)!;
 
 const SideNav = () => {
   const location = useLocation();
-  const { chats, currentUser, notifications } = useApp();
+  const { chats, currentUser, notifications, theme, setTheme } = useApp();
   
   const unseenMessageCount = chats.filter(c => currentUser && (!c.seenBy || !c.seenBy.includes(currentUser.id)) && c.lastMessage).length;
   const unseenNotificationCount = notifications.filter(n => !n.read).length;
@@ -402,6 +408,15 @@ const SideNav = () => {
       </div>
       
       <div className="mt-auto hidden md:flex flex-col gap-4 w-full">
+         <button 
+           onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')} 
+           className="flex items-center justify-center lg:justify-start gap-4 p-3 hover:bg-zinc-100 dark:hover:bg-zinc-900 rounded-xl transition-colors w-full group overflow-hidden text-zinc-800 dark:text-zinc-200 hover:text-black dark:hover:text-white"
+         >
+           <div className="relative flex items-center justify-center lg:justify-start w-full">
+             {theme === 'light' ? <Moon size={26} className="transition-transform group-hover:scale-105" /> : <Sun size={26} className="transition-transform group-hover:scale-105" />}
+             <span className="hidden lg:block ml-4 text-[16px]">Theme</span>
+           </div>
+         </button>
          <Link to="/profile" className="flex items-center gap-3 p-2 hover:bg-zinc-100 dark:hover:bg-zinc-900 rounded-xl transition-colors w-full group overflow-hidden">
             <img src={currentUser?.avatar || undefined} className="w-10 h-10 rounded-full bg-zinc-200 dark:bg-zinc-800 shrink-0" />
             <div className="hidden lg:flex flex-col flex-1 min-w-0">
@@ -850,7 +865,7 @@ const VerificationRequestModal = ({ onClose }: { onClose: () => void }) => {
 };
 
 const SettingsScreen = () => {
-  const { currentUser, showToast, logout } = useApp();
+  const { currentUser, showToast, logout, theme, setTheme } = useApp();
   const navigate = useNavigate();
   const [showVerifyModal, setShowVerifyModal] = useState(false);
 
@@ -900,7 +915,23 @@ const SettingsScreen = () => {
 
       <div className="flex-1 overflow-y-auto px-5 py-6 flex flex-col gap-6">
         <div className="flex flex-col gap-2">
-          <h3 className="font-bold text-lg mb-2 text-zinc-900 dark:text-zinc-100">Account</h3>
+          <h3 className="font-bold text-lg mb-2 text-zinc-900 dark:text-zinc-100">Appearance</h3>
+          <div className="bg-zinc-100 dark:bg-zinc-900 p-4 rounded-xl flex items-center justify-between">
+            <span className="font-medium text-zinc-900 dark:text-zinc-100">Dark Mode</span>
+            <button 
+              onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')} 
+              className="w-12 h-6 bg-zinc-300 dark:bg-indigo-500 rounded-full relative transition-colors shadow-inner"
+            >
+              <div className="absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform dark:translate-x-6 shadow-sm flex items-center justify-center">
+                <Moon size={10} className="text-indigo-500 hidden dark:block" />
+                <Sun size={10} className="text-amber-500 block dark:hidden" />
+              </div>
+            </button>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <h3 className="font-bold text-lg mb-2 mt-2 text-zinc-900 dark:text-zinc-100">Account</h3>
           <button 
             onClick={() => setShowVerifyModal(true)}
             disabled={currentUser?.isVerified || currentUser?.verificationStatus === 'pending'}
@@ -1302,6 +1333,7 @@ const EditProfileScreen = () => {
   const [username, setUsername] = useState(currentUser?.username || '');
   const [bio, setBio] = useState(currentUser?.bio || '');
   const [avatar, setAvatar] = useState(currentUser?.avatar || '');
+  const [hideBadges, setHideBadges] = useState(currentUser?.hideBadges || false);
   const [isUploading, setIsUploading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -1324,7 +1356,7 @@ const EditProfileScreen = () => {
        }
     }
     
-    updateProfile({ name, username: finalUsername, bio, avatar });
+    updateProfile({ name, username: finalUsername, bio, avatar, hideBadges });
     showToast('Profile updated!');
     setIsSaving(false);
     navigate('/profile');
@@ -1382,6 +1414,17 @@ const EditProfileScreen = () => {
           <div className="bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-3 rounded-xl">
             <textarea value={bio} onChange={e => setBio(e.target.value)} className="bg-transparent w-full outline-none text-black dark:text-white text-[15px] resize-none h-24" />
           </div>
+        </div>
+
+        <div className="flex items-center justify-between p-1 mt-2">
+          <span className="font-bold text-[14px]">Hide Badges</span>
+          <button 
+            onClick={() => setHideBadges(!hideBadges)} 
+            className="w-12 h-6 bg-zinc-300 dark:bg-zinc-700 rounded-full relative transition-colors shadow-inner"
+            style={{ backgroundColor: hideBadges ? '#6366f1' : undefined }}
+          >
+            <div className={cn("absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform shadow-sm", hideBadges && "translate-x-6")} />
+          </button>
         </div>
       </div>
     </motion.div>
@@ -2379,6 +2422,7 @@ const CreateGroupChatScreen = () => {
       await setDoc(doc(db, 'chats', chatId), {
         id: chatId,
         users: allUsers,
+        admins: [currentUser.id],
         lastMessage: 'Group created',
         updatedAt: serverTimestamp(),
         seenBy: [currentUser.id],
@@ -2592,7 +2636,7 @@ const HighlightedText = ({ text, highlight }: { text: string, highlight: string 
 };
 
 const ChatRoomScreen = () => {
-  const { chats, sendMessage, currentUser } = useApp();
+  const { chats, sendMessage, deleteMessage, currentUser } = useApp();
   const navigate = useNavigate();
   const location = useLocation();
   const chatId = location.pathname.split('/').pop() || '';
@@ -2605,6 +2649,7 @@ const ChatRoomScreen = () => {
   
     const [searchQuery, setSearchQuery] = useState('');
     const [isSearching, setIsSearching] = useState(false);
+    const [showGroupInfo, setShowGroupInfo] = useState(false);
   
     useEffect(() => {
       if (!chat || !currentUser) return;
@@ -2682,16 +2727,28 @@ const ChatRoomScreen = () => {
     <motion.div initial={{ x: 50, opacity: 0 }} animate={{ x: 0, opacity: 1 }} className="flex-1 flex flex-col min-h-0 bg-white dark:bg-black absolute inset-0 z-50">
       <header className="flex items-center px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black/90 backdrop-blur-md sticky top-0 z-10 shrink-0">
         <button onClick={() => navigate(-1)} className="mr-3 p-1.5 rounded-full text-zinc-500 dark:text-zinc-400 hover:text-black dark:text-white hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors"><ChevronLeft size={24} /></button>
-        <Link to={headerLink} className={cn("flex items-center gap-3 flex-1 group min-w-0", isGroup && "pointer-events-none")}>
-          <div className="relative shrink-0">
-             <img src={headerAvatar || undefined} alt="" className="w-10 h-10 rounded-full bg-zinc-200 dark:bg-zinc-800 object-cover" />
-             {!isGroup && <div className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-white dark:border-black rounded-full" />}
-          </div>
-          <div className="min-w-0">
-            <p className="font-bold text-[15px] text-zinc-900 dark:text-zinc-100 leading-tight mb-0.5 truncate">{headerName}</p>
-            <p className="text-[12px] font-medium text-zinc-500 dark:text-zinc-400 truncate">{headerSubtitle}</p>
-          </div>
-        </Link>
+        {isGroup ? (
+          <button onClick={() => setShowGroupInfo(true)} className="flex items-center gap-3 flex-1 group min-w-0 text-left">
+            <div className="relative shrink-0">
+               <img src={headerAvatar || undefined} alt="" className="w-10 h-10 rounded-full bg-zinc-200 dark:bg-zinc-800 object-cover" />
+            </div>
+            <div className="min-w-0">
+              <p className="font-bold text-[15px] text-zinc-900 dark:text-zinc-100 leading-tight mb-0.5 truncate">{headerName}</p>
+              <p className="text-[12px] font-medium text-zinc-500 dark:text-zinc-400 truncate">{headerSubtitle}</p>
+            </div>
+          </button>
+        ) : (
+          <Link to={headerLink} className="flex items-center gap-3 flex-1 group min-w-0">
+            <div className="relative shrink-0">
+               <img src={headerAvatar || undefined} alt="" className="w-10 h-10 rounded-full bg-zinc-200 dark:bg-zinc-800 object-cover" />
+               <div className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-white dark:border-black rounded-full" />
+            </div>
+            <div className="min-w-0">
+              <p className="font-bold text-[15px] text-zinc-900 dark:text-zinc-100 leading-tight mb-0.5 truncate">{headerName}</p>
+              <p className="text-[12px] font-medium text-zinc-500 dark:text-zinc-400 truncate">{headerSubtitle}</p>
+            </div>
+          </Link>
+        )}
         <button 
           onClick={() => {
             setIsSearching(!isSearching);
@@ -2764,28 +2821,38 @@ const ChatRoomScreen = () => {
                     <span className="text-[11px] text-zinc-500 ml-1 mb-1">{sender.name}</span>
                   )}
                   <div className={cn(
-                    "px-4 py-2.5 text-[15px] leading-relaxed relative", 
-                    msg.imageUrl ? "p-1 rounded-2xl overflow-hidden bg-transparent border-0" :
+                    "px-4 py-2.5 text-[15px] leading-relaxed relative flex items-center", 
+                    (msg.imageUrl || msg.videoUrl) ? "p-1 rounded-2xl overflow-hidden bg-transparent border-0" :
                     (isMe ? "bg-indigo-600 text-white shadow-sm" : "bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-sm"),
                     // Border radiuses for grouping
-                    !msg.imageUrl && "rounded-2xl",
-                    !msg.imageUrl && isMe && isSameSenderAsNext && "rounded-br-md",
-                    !msg.imageUrl && isMe && isSameSenderAsPrev && "rounded-tr-md",
-                    !msg.imageUrl && !isMe && isSameSenderAsNext && "rounded-bl-md",
-                    !msg.imageUrl && !isMe && isSameSenderAsPrev && "rounded-tl-md"
+                    !(msg.imageUrl || msg.videoUrl) && "rounded-2xl",
+                    !(msg.imageUrl || msg.videoUrl) && isMe && isSameSenderAsNext && "rounded-br-md",
+                    !(msg.imageUrl || msg.videoUrl) && isMe && isSameSenderAsPrev && "rounded-tr-md",
+                    !(msg.imageUrl || msg.videoUrl) && !isMe && isSameSenderAsNext && "rounded-bl-md",
+                    !(msg.imageUrl || msg.videoUrl) && !isMe && isSameSenderAsPrev && "rounded-tl-md",
+                    msg.isDeleted && "opacity-60 italic bg-zinc-100 border-none text-zinc-500"
                   )}>
-                    {msg.imageUrl ? (
-                      <img src={msg.imageUrl || undefined} className="rounded-xl w-full max-w-[240px] max-h-[300px] object-cover" />
+                    {msg.videoUrl ? (
+                      <video src={msg.videoUrl} controls className="rounded-xl w-full max-w-[240px] max-h-[300px] object-cover" />
+                    ) : msg.imageUrl ? (
+                      <img src={msg.imageUrl} className="rounded-xl w-full max-w-[240px] max-h-[300px] object-cover" />
                     ) : (
                       <HighlightedText text={msg.text} highlight={searchQuery} />
                     )}
                   </div>
-                  <span className={cn(
-                    "text-[10px] text-zinc-400 dark:text-zinc-500 font-medium px-1 mt-1",
-                    isMe ? "self-end" : "self-start"
-                  )}>
-                    {format(msg.createdAt, 'h:mm a')}
-                  </span>
+                  <div className={cn("flex items-center gap-2", isMe ? "self-end" : "self-start")}>
+                    {isMe && !msg.isDeleted && (
+                        <button 
+                          onClick={() => { if(confirm('Delete message?')) deleteMessage(chatId, msg.id) }} 
+                          className="opacity-0 group-hover:opacity-100 transition-opacity text-[10px] text-rose-500 uppercase tracking-widest font-bold"
+                        >
+                          Delete
+                        </button>
+                    )}
+                    <span className="text-[10px] text-zinc-400 dark:text-zinc-500 font-medium px-1 mt-1">
+                      {format(msg.createdAt, 'h:mm a')}
+                    </span>
+                  </div>
                 </div>
               </div>
             </React.Fragment>
@@ -2806,14 +2873,27 @@ const ChatRoomScreen = () => {
             />
             <label className="p-1.5 rounded-full text-zinc-500 dark:text-zinc-400 hover:text-indigo-500 hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors cursor-pointer shrink-0">
               <ImageIcon size={20} />
-              <input type="file" className="hidden" accept="image/*" onChange={async (e) => {
+              <input type="file" className="hidden" accept="image/*,video/*" onChange={async (e) => {
                 const f = e.target.files?.[0];
                 if (f) {
                   try {
-                    const dataUrl = await resizeImage(f, 800, 800);
-                    sendMessage(chatId, '', dataUrl);
+                    if (f.type.startsWith('image/')) {
+                      const dataUrl = await resizeImage(f, 800, 800);
+                      sendMessage(chatId, '', dataUrl);
+                    } else if (f.type.startsWith('video/')) {
+                      // Basic file to base64 for video
+                      if (f.size > 5 * 1024 * 1024) { 
+                        alert("Video must be under 5MB for the preview environment.");
+                        return;
+                      }
+                      const reader = new FileReader();
+                      reader.onloadend = () => {
+                        sendMessage(chatId, '', undefined, reader.result as string);
+                      };
+                      reader.readAsDataURL(f);
+                    }
                   } catch(e) {
-                    // ignore
+                    console.error(e);
                   }
                 }
               }} />
@@ -2828,6 +2908,106 @@ const ChatRoomScreen = () => {
           </button>
         </div>
       </form>
+
+      {showGroupInfo && isGroup && (
+         <div className="absolute inset-0 z-50 bg-white dark:bg-black flex flex-col">
+           <header className="flex items-center px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black/90 backdrop-blur-md shrink-0">
+             <button onClick={() => setShowGroupInfo(false)} className="mr-3 p-1.5 rounded-full text-zinc-500 hover:text-black dark:text-white transition-colors"><ChevronLeft size={24} /></button>
+             <span className="font-bold text-[15px]">Group Info</span>
+           </header>
+           <div className="flex-1 overflow-y-auto p-5">
+             <div className="flex flex-col items-center mb-8">
+                <div className="relative group">
+                  <img src={headerAvatar || undefined} className="w-24 h-24 rounded-full bg-zinc-200 dark:bg-zinc-800 object-cover" />
+                  <label className="absolute inset-0 bg-black/50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
+                    <ImageIcon className="text-white" />
+                    <input type="file" className="hidden" accept="image/*" onChange={async (e) => {
+                      const f = e.target.files?.[0];
+                      if(f) {
+                        try {
+                          const url = await resizeImage(f, 400, 400);
+                          updateDoc(doc(db, 'chats', chatId), { groupAvatar: url });
+                        }catch(err){}
+                      }
+                    }} />
+                  </label>
+                </div>
+                <h2 className="text-xl font-bold mt-4">{headerName}</h2>
+                <p className="text-zinc-500">{chat.users.length} members</p>
+             </div>
+
+             <div className="mb-6">
+               <div className="flex items-center justify-between mb-4">
+                 <h3 className="font-bold text-lg">Members</h3>
+                 {(!chat.onlyAdminsCanAddMembers || chat.admins?.includes(currentUser?.id || '')) && (
+                   <button onClick={() => {
+                     const username = window.prompt("Enter exact username to add:");
+                     if (username && username.trim()) {
+                       const fetchUser = async () => {
+                         const qRef = query(collection(db, 'users'), where('username', '==', username.trim().toLowerCase()));
+                         const snaps = await getDocs(qRef);
+                         if (!snaps.empty) {
+                           const matchId = snaps.docs[0].id;
+                           if (!chat.users.includes(matchId)) {
+                             updateDoc(doc(db, 'chats', chatId), { users: [...chat.users, matchId] });
+                             alert("Added!");
+                           } else alert("Already in group.");
+                         } else alert("User not found.");
+                       };
+                       fetchUser();
+                     }
+                   }} className="text-sm font-bold text-indigo-500 px-3 py-1 bg-indigo-50 dark:bg-indigo-900/30 rounded-full">Add Member</button>
+                 )}
+               </div>
+               
+               {chat.admins?.includes(currentUser?.id || '') && (
+                 <div className="flex items-center justify-between p-3 bg-zinc-50 dark:bg-zinc-900 rounded-xl mb-4">
+                   <span className="font-medium text-sm">Only Admins can add members</span>
+                   <button 
+                     onClick={() => updateDoc(doc(db, 'chats', chatId), { onlyAdminsCanAddMembers: !chat.onlyAdminsCanAddMembers })} 
+                     className="w-10 h-5 bg-zinc-300 dark:bg-zinc-700 rounded-full relative transition-colors shadow-inner"
+                     style={{ backgroundColor: chat.onlyAdminsCanAddMembers ? '#6366f1' : undefined }}
+                   >
+                     <div className={cn("absolute top-0.5 left-0.5 bg-white w-4 h-4 rounded-full transition-transform shadow-sm", chat.onlyAdminsCanAddMembers && "translate-x-5")} />
+                   </button>
+                 </div>
+               )}
+
+               <div className="flex flex-col gap-3">
+                 {chat.users.map(uid => {
+                   const u = uid === currentUser?.id ? currentUser : chatUsers[uid];
+                   if (!u) return null;
+                   return (
+                     <div key={uid} className="flex items-center gap-3">
+                       <img src={u.avatar || undefined} className="w-10 h-10 rounded-full object-cover bg-zinc-200 dark:bg-zinc-800" />
+                       <span className="font-bold">{u.name} <span className="text-zinc-500 font-normal ml-1">@{u.username}</span></span>
+                       {chat.admins?.includes(u.id) && <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded ml-auto">Admin</span>}
+                     </div>
+                   )
+                 })}
+               </div>
+             </div>
+
+             <div className="mb-6">
+               <h3 className="font-bold text-lg mb-4">Media</h3>
+               <div className="grid grid-cols-3 gap-1">
+                 {chatMessages.filter(m => m.imageUrl || m.videoUrl).map(m => (
+                   <div key={m.id} className="aspect-square bg-zinc-100 dark:bg-zinc-900 overflow-hidden relative">
+                     {m.videoUrl ? (
+                        <video src={m.videoUrl} className="w-full h-full object-cover" />
+                     ) : (
+                        <img src={m.imageUrl} className="w-full h-full object-cover" />
+                     )}
+                   </div>
+                 ))}
+                 {chatMessages.filter(m => m.imageUrl || m.videoUrl).length === 0 && (
+                   <p className="text-sm text-zinc-500 col-span-3">No media shared yet.</p>
+                 )}
+               </div>
+             </div>
+           </div>
+         </div>
+      )}
     </motion.div>
   );
 };
@@ -3239,7 +3419,7 @@ const UserProfileScreen = () => {
           </h2>
           <p className="text-[14px] mt-2 text-zinc-700 dark:text-zinc-300 leading-relaxed max-w-[90%] break-words">{user.bio}</p>
           
-          {user.badges && user.badges.length > 0 && (
+          {!user.hideBadges && user.badges && user.badges.length > 0 && (
             <div className="mt-4 flex flex-wrap gap-2">
               {user.badges.map(badge => (
                 <div key={badge.id} className="flex items-center gap-1.5 bg-yellow-50 dark:bg-yellow-900/10 border border-yellow-200 dark:border-yellow-900/30 px-2.5 py-1 rounded-full" title={badge.contestTitle}>
@@ -3318,7 +3498,7 @@ const UserProfileScreen = () => {
 };
 
 const ProfileScreen = () => {
-  const { posts, showToast, currentUser, logout } = useApp();
+  const { posts, showToast, currentUser, logout, theme, setTheme } = useApp();
   const navigate = useNavigate();
   const myPosts = posts.filter(p => p.userId === currentUser?.id);
   const [followerIds, setFollowerIds] = useState<string[]>([]);
@@ -3363,10 +3543,15 @@ const ProfileScreen = () => {
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex-1 flex flex-col min-h-0 bg-white dark:bg-black">
       <header className="flex items-center justify-between px-5 py-5 border-b border-zinc-200 dark:border-zinc-800 sticky top-0 bg-white dark:bg-black/90 backdrop-blur-md z-40 shrink-0">
-        <div className="w-6" />
+        <button 
+          onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')} 
+          className="text-zinc-700 dark:text-zinc-300 hover:text-black dark:hover:text-white transition-colors w-6 flex justify-start"
+        >
+          {theme === 'light' ? <Moon size={22} /> : <Sun size={22} />}
+        </button>
         <span className="font-bold text-[15px] tracking-wide text-zinc-900 dark:text-zinc-100">@{currentUser.username}</span>
-        <button onClick={logout} className="text-rose-500 hover:text-rose-400 transition-colors w-6 flex justify-end">
-          <LogOut size={20} />
+        <button onClick={() => navigate('/settings')} className="text-zinc-500 hover:text-black dark:hover:text-white transition-colors w-6 flex justify-end">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         </button>
       </header>
       
@@ -3390,7 +3575,7 @@ const ProfileScreen = () => {
           </h2>
           <p className="text-[14px] mt-2 text-zinc-700 dark:text-zinc-300 leading-relaxed max-w-[90%] break-words">{currentUser.bio}</p>
 
-          {currentUser.badges && currentUser.badges.length > 0 && (
+          {!currentUser.hideBadges && currentUser.badges && currentUser.badges.length > 0 && (
             <div className="mt-4 flex flex-wrap gap-2">
               {currentUser.badges.map(badge => (
                 <div key={badge.id} className="flex items-center gap-1.5 bg-yellow-50 dark:bg-yellow-900/10 border border-yellow-200 dark:border-yellow-900/30 px-2.5 py-1 rounded-full" title={badge.contestTitle}>
@@ -3806,7 +3991,7 @@ export default function App() {
     }
   };
 
-  const sendMessage = async (chatId: string, text: string, imageUrl?: string) => {
+  const sendMessage = async (chatId: string, text: string, imageUrl?: string, videoUrl?: string) => {
     if (!currentUser) return;
     const msgId = `m${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
     const newMsg: any = {
@@ -3817,16 +4002,32 @@ export default function App() {
       createdAt: serverTimestamp(),
     };
     if (imageUrl) newMsg.imageUrl = imageUrl;
+    if (videoUrl) newMsg.videoUrl = videoUrl;
     try {
       await setDoc(doc(db, `chats/${chatId}/messages`, msgId), newMsg);
       await updateDoc(doc(db, 'chats', chatId), {
-        lastMessage: text || (imageUrl ? 'Sent an image' : ''),
+        lastMessage: text || (imageUrl ? 'Sent an image' : (videoUrl ? 'Sent a video' : '')),
         updatedAt: serverTimestamp(),
         seenBy: [currentUser.id]
       });
     } catch (e) {
       console.error(e);
       showToast('Error sending message');
+    }
+  };
+
+  const deleteMessage = async (chatId: string, msgId: string) => {
+    if (!currentUser) return;
+    try {
+      await updateDoc(doc(db, `chats/${chatId}/messages`, msgId), {
+        isDeleted: true,
+        text: 'This message was deleted.',
+        imageUrl: null,
+        videoUrl: null
+      });
+    } catch (e) {
+      console.error(e);
+      showToast('Error deleting message');
     }
   };
 
@@ -3863,7 +4064,7 @@ export default function App() {
   };
 
   return (
-    <AppContext.Provider value={{ currentUser, logout, updateProfile, posts, setPosts, updatePost, deletePost, chats, messages, setMessages, notifications, followingIds, toggleLike, sendMessage, showToast, theme, setTheme: updateTheme }}>
+    <AppContext.Provider value={{ currentUser, logout, updateProfile, posts, setPosts, updatePost, deletePost, chats, messages, setMessages, notifications, followingIds, toggleLike, sendMessage, deleteMessage, showToast, theme, setTheme: updateTheme }}>
       <div className="min-h-[100dvh] h-[100dvh] bg-white dark:bg-black text-black dark:text-white font-sans flex justify-center w-full">
         <div className="w-full h-full max-w-5xl bg-white dark:bg-black relative flex flex-col overflow-hidden">
           

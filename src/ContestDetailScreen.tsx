@@ -439,8 +439,8 @@ const MatchList = ({ matches, round, currentUser, users, isHost, contest }: { ma
                     <>
                       <img src={match.user1Photo} className={cn("w-full h-full object-cover", match.status === 'completed' && match.winnerId !== p1.id && "grayscale opacity-50")} />
                       {match.status === 'active' && !hasVoted && !amIP1 && !amIP2 && currentUser && (
-                        <div className="absolute inset-x-0 bottom-6 flex justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                           <button onClick={() => handleVote(match.id, 1)} className="bg-red-500 hover:bg-red-600 text-white w-14 h-14 rounded-full flex items-center justify-center shadow-xl active:scale-90 transition-all">
+                        <div className="absolute inset-x-0 bottom-6 flex justify-center drop-shadow-md">
+                           <button onClick={() => handleVote(match.id, 1)} className="bg-red-500 hover:bg-red-600 text-white w-14 h-14 rounded-full flex items-center justify-center shadow-xl active:scale-95 transition-all">
                              <Heart size={28} className="fill-current" />
                            </button>
                         </div>
@@ -483,8 +483,8 @@ const MatchList = ({ matches, round, currentUser, users, isHost, contest }: { ma
                     <>
                       <img src={match.user2Photo} className={cn("w-full h-full object-cover", match.status === 'completed' && match.winnerId !== p2.id && "grayscale opacity-50")} />
                       {match.status === 'active' && !hasVoted && !amIP1 && !amIP2 && currentUser && (
-                        <div className="absolute inset-x-0 bottom-6 flex justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                           <button onClick={() => handleVote(match.id, 2)} className="bg-red-500 hover:bg-red-600 text-white w-14 h-14 rounded-full flex items-center justify-center shadow-xl active:scale-90 transition-all">
+                        <div className="absolute inset-x-0 bottom-6 flex justify-center drop-shadow-md">
+                           <button onClick={() => handleVote(match.id, 2)} className="bg-red-500 hover:bg-red-600 text-white w-14 h-14 rounded-full flex items-center justify-center shadow-xl active:scale-95 transition-all">
                              <Heart size={28} className="fill-current" />
                            </button>
                         </div>
