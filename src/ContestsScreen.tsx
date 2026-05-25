@@ -276,7 +276,7 @@ export const ContestsScreen = () => {
   );
 };
 
-const ContestCard = ({ contest, users, currentUser }: { contest: Contest, users: User[], currentUser: User | null }) => {
+const ContestCard: React.FC<{ contest: Contest, users: any[], currentUser: any }> = ({ contest, users, currentUser }) => {
   const isHost = currentUser?.id === contest.hostId;
   const isParticipant = currentUser && contest.participants.includes(currentUser.id);
   const isRequested = currentUser && contest.requests.includes(currentUser.id);

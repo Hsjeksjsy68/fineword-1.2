@@ -58,7 +58,11 @@ service cloud.firestore {
         && (!('verificationStatus' in data) || data.verificationStatus in ['none', 'pending', 'accepted', 'rejected'])
         && (!('verificationData' in data) || data.verificationData is map)
         && (!('deactivated' in data) || data.deactivated is bool)
-        && (!('badges' in data) || data.badges is list);
+        && (!('hideBadges' in data) || data.hideBadges is bool)
+        && (!('badges' in data) || data.badges is list)
+        && (!('activeBadgeId' in data) || data.activeBadgeId is string || data.activeBadgeId == null)
+        && (!('lastActive' in data) || data.lastActive is timestamp)
+        && (!('appThemeParams' in data) || data.appThemeParams is map);
     }
 
     function isValidPost(data) {
@@ -123,7 +127,11 @@ service cloud.firestore {
         && (!('seenBy' in data) || (data.seenBy is list && data.seenBy.size() <= 50))
         && (!('isGroup' in data) || data.isGroup is bool)
         && (!('groupName' in data) || (data.groupName is string && data.groupName.size() <= 100))
-        && (!('groupAvatar' in data) || (data.groupAvatar is string && data.groupAvatar.size() <= 10485760));
+        && (!('groupAvatar' in data) || (data.groupAvatar is string && data.groupAvatar.size() <= 10485760))
+        && (!('admins' in data) || (data.admins is list && data.admins.size() <= 50))
+        && (!('onlyAdminsCanAddMembers' in data) || data.onlyAdminsCanAddMembers is bool)
+        && (!('theme' in data) || (data.theme is string && data.theme.size() <= 100))
+        && (!('nicknames' in data) || data.nicknames is map);
     }
 
     function isValidMessage(data) {
@@ -138,7 +146,9 @@ service cloud.firestore {
         && data.text is string
         && data.text.size() <= 5000
         && data.createdAt is timestamp
-        && (!('imageUrl' in data) || (data.imageUrl is string && data.imageUrl.size() <= 10485760));
+        && (!('imageUrl' in data) || (data.imageUrl is string && data.imageUrl.size() <= 10485760) || data.imageUrl == null)
+        && (!('videoUrl' in data) || (data.videoUrl is string && data.videoUrl.size() <= 10485760) || data.videoUrl == null)
+        && (!('isDeleted' in data) || data.isDeleted is bool);
     }
 
     function isValidComment(data) {
@@ -193,7 +203,7 @@ service cloud.firestore {
                     && (
                       (
                         isOwner(userId)
-                        && incoming().diff(existing()).affectedKeys().hasOnly(['username', 'name', 'avatar', 'bio', 'theme', 'verificationStatus', 'verificationData', 'deactivated'])
+                        && incoming().diff(existing()).affectedKeys().hasOnly(['username', 'name', 'avatar', 'bio', 'theme', 'verificationStatus', 'verificationData', 'deactivated', 'hideBadges', 'activeBadgeId', 'lastActive', 'appThemeParams'])
                         && (!('verificationStatus' in incoming().diff(existing()).affectedKeys()) || incoming().verificationStatus in ['pending', 'none'])
                       )
                       ||
@@ -357,12 +367,21 @@ service cloud.firestore {
                     && isValidId(chatId)
                     && isValidChat(incoming())
                     && incoming().id == existing().id
-                    && incoming().users == existing().users
                     && (
                       (incoming().updatedAt == request.time && incoming().diff(existing()).affectedKeys().hasOnly(['lastMessage', 'updatedAt', 'seenBy']))
                       ||
                       (incoming().diff(existing()).affectedKeys().hasOnly(['seenBy']))
+                      ||
+                      (
+                        incoming().diff(existing()).affectedKeys().hasOnly(['users', 'groupAvatar', 'admins', 'onlyAdminsCanAddMembers', 'theme', 'nicknames', 'groupName'])
+                        && (
+                          !('users' in incoming().diff(existing()).affectedKeys())
+                          || existing().get('onlyAdminsCanAddMembers', false) == false 
+                          || request.auth.uid in existing().get('admins', [])
+                        )
+                      )
                     );
+      allow delete: if isSignedIn() && request.auth.uid in existing().users;
       
       match /messages/{messageId} {
         allow read: if isSignedIn()
@@ -380,6 +399,12 @@ service cloud.firestore {
                       && incoming().id == messageId
                       && incoming().chatId == chatId
                       && incoming().createdAt == request.time;
+        allow update: if isSignedIn()
+                      && isOwner(existing().senderId)
+                      && isValidId(messageId)
+                      && isValidMessage(incoming())
+                      && incoming().diff(existing()).affectedKeys().hasOnly(['isDeleted', 'text', 'imageUrl', 'videoUrl'])
+                      && incoming().isDeleted == true;
       }
     }
 

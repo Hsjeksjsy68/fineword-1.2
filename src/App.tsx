@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Link, useNavigate, useLocation, useParams, useSearchParams } from 'react-router-dom';
-import { Home, MessageCircle, User as UserIcon, Heart, Send, PlusSquare, Image as ImageIcon, ChevronLeft, MoreHorizontal, LogOut, Search, Moon, Sun, Share2, Music, Type, Palette, Check, BarChart2, X, Trophy } from 'lucide-react';
+import { Home, MessageCircle, User as UserIcon, Heart, Send, PlusSquare, Image as ImageIcon, ChevronLeft, MoreHorizontal, LogOut, Search, Moon, Sun, Share2, Music, Type, Palette, Check, BarChart2, X, Trophy, Settings } from 'lucide-react';
 import { formatDistanceToNow, format, isSameDay } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
@@ -152,6 +152,12 @@ export type User = {
   reportCount?: number;
   badges?: Badge[];
   hideBadges?: boolean;
+  activeBadgeId?: string | null;
+  lastActive?: any;
+  appThemeParams?: {
+    feedColor: string;
+    postBgColor: string;
+  };
 };
 
 export type Contest = {
@@ -287,6 +293,8 @@ type Chat = {
   isGroup?: boolean;
   groupName?: string;
   groupAvatar?: string;
+  theme?: string;
+  nicknames?: Record<string, string>;
 };
 
 
@@ -344,6 +352,8 @@ interface AppState {
   updatePost: (postId: string, newCaption: string) => Promise<void>;
   deletePost: (postId: string) => Promise<void>;
   chats: Chat[];
+  deleteChat: (chatId: string) => Promise<void>;
+  removeGroupMember: (chatId: string, userIdToRemove: string) => Promise<void>;
   messages: Message[];
   setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
   notifications: Notification[];
@@ -392,15 +402,15 @@ const SideNav = () => {
           const Icon = item.icon;
           const isActive = location.pathname === item.path || (item.path !== '/' && location.pathname.startsWith(item.path));
           return (
-            <Link key={item.path} to={item.path} className={cn("flex flex-row items-center gap-4 p-3 rounded-xl transition-all group", isActive ? "font-bold" : "hover:bg-zinc-100 dark:hover:bg-zinc-900")}>
+            <Link key={item.path} to={item.path} className={cn("flex flex-row items-center gap-4 p-3 rounded-xl transition-all group", isActive ? "font-bold" : "hover:bg-zinc-100 dark:hover:bg-zinc-100 dark:bg-zinc-100 dark:bg-zinc-900")}>
               <div className="relative flex items-center justify-center lg:justify-start w-full">
-                <Icon size={26} className={cn("transition-transform group-hover:scale-105", isActive ? "text-indigo-600 dark:text-indigo-400" : "text-zinc-800 dark:text-zinc-200 group-hover:text-black dark:group-hover:text-white")} />
+                <Icon size={26} className={cn("transition-transform group-hover:scale-105", isActive ? "text-indigo-600 dark:text-indigo-400" : "text-zinc-800 dark:text-zinc-800 dark:text-zinc-800 dark:text-zinc-200 group-hover:text-black dark:group-hover:text-black dark:text-white")} />
                 {!!item.badgeCount && item.badgeCount > 0 && (
-                  <div className="absolute -top-1.5 right-[calc(50%-22px)] lg:right-auto lg:left-4 h-[18px] min-w-[18px] px-1 bg-red-500 rounded-full border border-white dark:border-black flex items-center justify-center text-[10px] font-bold text-white shadow-sm">
+                  <div className="absolute -top-1.5 right-[calc(50%-22px)] lg:right-auto lg:left-4 h-[18px] min-w-[18px] px-1 bg-red-500 rounded-full border border-white dark:border-black flex items-center justify-center text-[10px] font-bold text-black dark:text-white shadow-sm">
                     {item.badgeCount > 99 ? '99+' : item.badgeCount}
                   </div>
                 )}
-                <span className={cn("hidden lg:block ml-4 text-[16px]", isActive ? "text-indigo-600 dark:text-indigo-400" : "text-zinc-800 dark:text-zinc-200 group-hover:text-black dark:group-hover:text-white")}>{item.label}</span>
+                <span className={cn("hidden lg:block ml-4 text-[16px]", isActive ? "text-indigo-600 dark:text-indigo-400" : "text-zinc-800 dark:text-zinc-800 dark:text-zinc-800 dark:text-zinc-200 group-hover:text-black dark:group-hover:text-black dark:text-white")}>{item.label}</span>
               </div>
             </Link>
           );
@@ -410,21 +420,21 @@ const SideNav = () => {
       <div className="mt-auto hidden md:flex flex-col gap-4 w-full">
          <button 
            onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')} 
-           className="flex items-center justify-center lg:justify-start gap-4 p-3 hover:bg-zinc-100 dark:hover:bg-zinc-900 rounded-xl transition-colors w-full group overflow-hidden text-zinc-800 dark:text-zinc-200 hover:text-black dark:hover:text-white"
+           className="flex items-center justify-center lg:justify-start gap-4 p-3 hover:bg-zinc-100 dark:hover:bg-zinc-100 dark:bg-zinc-100 dark:bg-zinc-900 rounded-xl transition-colors w-full group overflow-hidden text-zinc-800 dark:text-zinc-800 dark:text-zinc-800 dark:text-zinc-200 hover:text-black dark:hover:text-black dark:text-white"
          >
            <div className="relative flex items-center justify-center lg:justify-start w-full">
              {theme === 'light' ? <Moon size={26} className="transition-transform group-hover:scale-105" /> : <Sun size={26} className="transition-transform group-hover:scale-105" />}
              <span className="hidden lg:block ml-4 text-[16px]">Theme</span>
            </div>
          </button>
-         <Link to="/profile" className="flex items-center gap-3 p-2 hover:bg-zinc-100 dark:hover:bg-zinc-900 rounded-xl transition-colors w-full group overflow-hidden">
+         <Link to="/profile" className="flex items-center gap-3 p-2 hover:bg-zinc-100 dark:hover:bg-zinc-100 dark:bg-zinc-100 dark:bg-zinc-900 rounded-xl transition-colors w-full group overflow-hidden">
             <img src={currentUser?.avatar || undefined} className="w-10 h-10 rounded-full bg-zinc-200 dark:bg-zinc-800 shrink-0" />
             <div className="hidden lg:flex flex-col flex-1 min-w-0">
                <span className="text-[14px] font-bold text-zinc-900 dark:text-zinc-100 flex items-center truncate">
                  <span className="truncate">{currentUser?.name}</span>
                  <VerifiedBadge isVerified={currentUser?.isVerified} />
                </span>
-               <span className="text-[12px] text-zinc-500 truncate">@{currentUser?.username}</span>
+               <span className="text-[12px] text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 truncate">@{currentUser?.username}</span>
             </div>
          </Link>
       </div>
@@ -459,11 +469,11 @@ const BottomNav = () => {
           <Link key={item.path} to={item.path} className="relative p-2">
             <Icon 
               size={24} 
-              className={cn("transition-colors", isActive ? "text-indigo-400" : "text-zinc-600 hover:text-zinc-500 dark:text-zinc-500 dark:text-zinc-400")} 
+              className={cn("transition-colors", isActive ? "text-indigo-400" : "text-zinc-600 hover:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-400")} 
               strokeWidth={isActive ? 2.5 : 2}
             />
             {!!item.badgeCount && item.badgeCount > 0 && (
-              <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-red-500 border border-white dark:border-black rounded-full flex items-center justify-center text-[10px] font-bold text-white shadow-sm">
+              <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-red-500 border border-white dark:border-black rounded-full flex items-center justify-center text-[10px] font-bold text-black dark:text-white shadow-sm">
                 {item.badgeCount > 99 ? '99+' : item.badgeCount}
               </span>
             )}
@@ -534,27 +544,36 @@ const PostItem: React.FC<{ post: Post }> = ({ post }) => {
     }
   };
 
+  const postStyle = currentUser?.appThemeParams?.postBgColor ? { backgroundColor: currentUser.appThemeParams.postBgColor } : {};
+  const activeBadge = user.activeBadgeId && !user.hideBadges && user.badges ? user.badges.find(b => b.id === user.activeBadgeId) : null;
+
   return (
-    <div className="mb-6 flex flex-col gap-3 relative bg-white dark:bg-zinc-950 sm:border border-zinc-200 dark:border-zinc-800 sm:rounded-2xl pb-4">
+    <div className="mb-6 flex flex-col gap-3 relative bg-white dark:bg-zinc-50 dark:bg-zinc-50 dark:bg-zinc-950 sm:border border-zinc-200 dark:border-zinc-800 sm:rounded-2xl pb-4" style={postStyle}>
       <div className="flex items-center gap-3 px-5 pt-4">
         <Link to={`/${user.username}`} className="flex items-center gap-3 flex-1 overflow-hidden group">
           <img src={user.avatar || undefined} alt={user.username} className="w-10 h-10 rounded-full bg-zinc-200 dark:bg-zinc-800 p-0.5 object-cover" />
-          <div className="font-semibold text-[14px] flex-1 flex items-center text-zinc-900 dark:text-zinc-100 group-hover:text-zinc-500 transition-colors truncate">
+          <div className="font-semibold text-[14px] flex-1 flex items-center text-zinc-900 dark:text-zinc-100 group-hover:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 transition-colors truncate">
             {user.username}
             <VerifiedBadge isVerified={user.isVerified} />
+            {activeBadge && (
+              <span className="ml-1" title={activeBadge.name}>{activeBadge.icon}</span>
+            )}
+            {checkIsOnline(user.lastActive) && (
+              <span className="ml-2 w-2 h-2 rounded-full bg-green-500" title="Online" />
+            )}
           </div>
         </Link>
         <div className="relative">
-          <button onClick={() => setShowOptions(!showOptions)} className="p-2 -mr-2"><MoreHorizontal size={20} className="text-zinc-600 hover:text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 transition-colors" /></button>
+          <button onClick={() => setShowOptions(!showOptions)} className="p-2 -mr-2"><MoreHorizontal size={20} className="text-zinc-600 hover:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 transition-colors" /></button>
           
           {showOptions && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setShowOptions(false)} />
               <div className="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-lg z-50 overflow-hidden flex flex-col">
-                <button onClick={handleShare} className="text-left px-4 py-3 text-[14px] text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-800 dark:hover:text-white transition-colors">Share</button>
+                <button onClick={handleShare} className="text-left px-4 py-3 text-[14px] text-zinc-700 dark:text-zinc-800 dark:text-zinc-800 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-200 dark:bg-zinc-200 dark:bg-zinc-800 dark:hover:text-black dark:text-white transition-colors">Share</button>
                 {currentUser?.id === post.userId ? (
                   <>
-                    <button onClick={() => { setIsEditing(true); setShowOptions(false); }} className="text-left px-4 py-3 text-[14px] text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-800 dark:hover:text-white transition-colors">Edit</button>
+                    <button onClick={() => { setIsEditing(true); setShowOptions(false); }} className="text-left px-4 py-3 text-[14px] text-zinc-700 dark:text-zinc-800 dark:text-zinc-800 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-200 dark:bg-zinc-200 dark:bg-zinc-800 dark:hover:text-black dark:text-white transition-colors">Edit</button>
                     <button onClick={() => { handleDelete(); setShowOptions(false); }} className="text-left px-4 py-3 text-[14px] text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">Delete</button>
                   </>
                 ) : (
@@ -566,12 +585,12 @@ const PostItem: React.FC<{ post: Post }> = ({ post }) => {
         </div>
       </div>
       {(post.imageUrl || post.caption) && (
-        <div className={cn("w-full bg-zinc-100 dark:bg-zinc-950 px-0 relative", (!post.imageUrl) && "aspect-[4/3] flex items-center justify-center p-6")}>
+        <div className={cn("w-full bg-zinc-100 dark:bg-zinc-50 dark:bg-zinc-50 dark:bg-zinc-950 px-0 relative", (!post.imageUrl) && "aspect-[4/3] flex items-center justify-center p-6")}>
           {post.imageUrl ? (
             <img 
               src={post.imageUrl || undefined} 
               alt="Post" 
-              className="w-full h-auto max-h-[80vh] object-cover bg-zinc-100 dark:bg-zinc-950 cursor-zoom-in" 
+              className="w-full h-auto max-h-[80vh] object-cover bg-zinc-100 dark:bg-zinc-50 dark:bg-zinc-50 dark:bg-zinc-950 cursor-zoom-in" 
               onClick={() => setIsZoomed(true)}
             />
           ) : (
@@ -588,11 +607,11 @@ const PostItem: React.FC<{ post: Post }> = ({ post }) => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 sm:p-10 cursor-zoom-out"
+            className="fixed inset-0 z-[100] bg-white dark:bg-transparent/90 backdrop-blur-sm flex items-center justify-center p-4 sm:p-10 cursor-zoom-out"
             onClick={() => setIsZoomed(false)}
           >
             <button 
-              className="absolute top-6 right-6 text-white/70 hover:text-white p-2 rounded-full bg-black/50 hover:bg-black transition-colors z-[101]"
+              className="absolute top-6 right-6 text-black dark:text-white/70 hover:text-black dark:text-white p-2 rounded-full bg-white dark:bg-transparent/50 hover:bg-white dark:bg-black transition-colors z-[101]"
               onClick={(e) => {
                 e.stopPropagation();
                 setIsZoomed(false);
@@ -617,13 +636,13 @@ const PostItem: React.FC<{ post: Post }> = ({ post }) => {
       <div className="px-5 pt-2">
         <div className="flex items-center gap-4 mb-3">
           <button onClick={() => toggleLike(post.id)} className="group">
-            <Heart size={24} className={cn("transition-all duration-300", isLiked ? "fill-rose-500 text-rose-500 scale-110" : "text-zinc-900 dark:text-zinc-100 group-hover:text-zinc-500")} />
+            <Heart size={24} className={cn("transition-all duration-300", isLiked ? "fill-rose-500 text-rose-500 scale-110" : "text-zinc-900 dark:text-zinc-100 group-hover:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500")} />
           </button>
           <button onClick={() => navigate(`/post/${post.id}/comments`)} className="group">
-            <MessageCircle size={24} className="text-zinc-900 dark:text-zinc-100 group-hover:text-zinc-500 transition-colors" />
+            <MessageCircle size={24} className="text-zinc-900 dark:text-zinc-100 group-hover:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 transition-colors" />
           </button>
           <button onClick={handleShare} className="group">
-            <Share2 size={24} className="text-zinc-900 dark:text-zinc-100 group-hover:text-zinc-500 transition-colors" />
+            <Share2 size={24} className="text-zinc-900 dark:text-zinc-100 group-hover:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 transition-colors" />
           </button>
         </div>
         <p className="font-semibold text-[14px] text-zinc-900 dark:text-zinc-100 mb-2">{post.likes.toLocaleString()} likes</p>
@@ -637,18 +656,18 @@ const PostItem: React.FC<{ post: Post }> = ({ post }) => {
               rows={3}
             />
             <div className="flex justify-end gap-2">
-              <button onClick={() => { setIsEditing(false); setEditCaption(post.caption || ''); }} className="px-4 py-1.5 text-[13px] font-medium text-zinc-600 dark:text-zinc-400">Cancel</button>
-              <button onClick={handleSaveEdit} className="px-4 py-1.5 text-[13px] font-medium bg-indigo-500 text-white rounded-md">Save</button>
+              <button onClick={() => { setIsEditing(false); setEditCaption(post.caption || ''); }} className="px-4 py-1.5 text-[13px] font-medium text-zinc-600 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-400">Cancel</button>
+              <button onClick={handleSaveEdit} className="px-4 py-1.5 text-[13px] font-medium bg-indigo-500 text-black dark:text-white rounded-md">Save</button>
             </div>
           </div>
         ) : (
           <p className="text-[14px] leading-relaxed">
             <span className="font-semibold mr-2 text-zinc-900 dark:text-zinc-100">{user.username}</span>
-            <span className="text-zinc-800 dark:text-zinc-200">{formatTextHighlight(post.caption)}</span>
+            <span className="text-zinc-800 dark:text-zinc-800 dark:text-zinc-800 dark:text-zinc-200">{formatTextHighlight(post.caption)}</span>
           </p>
         )}
         
-        <p className="text-[11px] text-zinc-500 dark:text-zinc-500 mt-2 uppercase tracking-wide font-medium">
+        <p className="text-[11px] text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 mt-2 uppercase tracking-wide font-medium">
           {formatDistanceToNow(post.createdAt, { addSuffix: true })}
         </p>
       </div>
@@ -730,7 +749,7 @@ const CommentsScreen = () => {
   return (
     <motion.div initial={{ x: 50, opacity: 0 }} animate={{ x: 0, opacity: 1 }} className="flex-1 flex flex-col min-h-0 bg-white dark:bg-black absolute inset-0 z-50">
       <header className="flex items-center justify-between px-5 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black/90 backdrop-blur-md sticky top-0 z-50 shrink-0">
-        <button onClick={() => navigate(-1)} className="text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 hover:text-black dark:text-white transition-colors w-8"><ChevronLeft size={24} /></button>
+        <button onClick={() => navigate(-1)} className="text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 hover:text-black dark:text-white transition-colors w-8"><ChevronLeft size={24} /></button>
         <span className="font-bold text-lg text-zinc-900 dark:text-zinc-100">Post</span>
         <div className="w-8" />
       </header>
@@ -755,14 +774,14 @@ const CommentsScreen = () => {
                <div className="flex-1">
                  <div className="flex items-baseline gap-2">
                    <span className="font-bold text-[13px] text-zinc-900 dark:text-zinc-100">{u.username}</span>
-                   <span className="text-[11px] text-zinc-500 dark:text-zinc-500">{formatDistanceToNow(cm.createdAt)}</span>
+                   <span className="text-[11px] text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500">{formatDistanceToNow(cm.createdAt)}</span>
                  </div>
                  <p className="text-[13px] text-zinc-700 dark:text-zinc-300 mt-1">{formatTextHighlight(cm.text)}</p>
                </div>
             </div>
           )
         })}
-        {comments.length === 0 && <div className="text-zinc-500 dark:text-zinc-500 text-center mt-10">No comments yet</div>}
+        {comments.length === 0 && <div className="text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 text-center mt-10">No comments yet</div>}
       </div>
 
       <form onSubmit={handleSend} className="px-4 py-3 bg-white dark:bg-black border-t border-zinc-200 dark:border-zinc-800/80 mb-safe shrink-0 flex items-center gap-3">
@@ -772,7 +791,7 @@ const CommentsScreen = () => {
           value={commentText}
           onChange={e => setCommentText(e.target.value)}
           placeholder="Add a comment..."
-          className="flex-1 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-full px-4 py-2 text-[14px] text-black dark:text-white outline-none placeholder:text-zinc-500 dark:text-zinc-500"
+          className="flex-1 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-full px-4 py-2 text-[14px] text-black dark:text-white outline-none placeholder:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500"
         />
         <button type="submit" disabled={!commentText.trim()} className="text-indigo-400 font-bold px-2 disabled:opacity-50">Post</button>
       </form>
@@ -808,11 +827,11 @@ const VerificationRequestModal = ({ onClose }: { onClose: () => void }) => {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
-      <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="bg-white dark:bg-zinc-950 w-full max-w-md rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
-        <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center bg-white dark:bg-zinc-950 sticky top-0 z-10 shrink-0">
+    <div className="fixed inset-0 bg-white dark:bg-transparent/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
+      <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="bg-white dark:bg-zinc-50 dark:bg-zinc-50 dark:bg-zinc-950 w-full max-w-md rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+        <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center bg-white dark:bg-zinc-50 dark:bg-zinc-50 dark:bg-zinc-950 sticky top-0 z-10 shrink-0">
           <h2 className="font-bold text-lg dark:text-white">Verification Request</h2>
-          <button onClick={onClose} className="p-1.5 bg-zinc-100 dark:bg-zinc-900 rounded-full text-zinc-500 hover:text-black dark:text-zinc-400 dark:hover:text-white transition-colors">
+          <button onClick={onClose} className="p-1.5 bg-zinc-100 dark:bg-zinc-900 rounded-full text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 hover:text-black dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 dark:hover:text-black dark:text-white transition-colors">
             <X size={20} />
           </button>
         </div>
@@ -849,12 +868,12 @@ const VerificationRequestModal = ({ onClose }: { onClose: () => void }) => {
              ))}
           </form>
         </div>
-        <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 shrink-0">
+        <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-50 dark:bg-zinc-50 dark:bg-zinc-950 shrink-0">
           <button 
              type="submit" 
              form="verify-form"
              disabled={loading}
-             className="w-full py-3.5 bg-indigo-500 hover:bg-indigo-600 text-white rounded-xl font-bold text-[15px] transition-colors disabled:opacity-50 flex justify-center items-center"
+             className="w-full py-3.5 bg-indigo-500 hover:bg-indigo-600 text-black dark:text-white rounded-xl font-bold text-[15px] transition-colors disabled:opacity-50 flex justify-center items-center"
           >
              {loading ? <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span> : 'Submit Request'}
           </button>
@@ -909,7 +928,7 @@ const SettingsScreen = () => {
   return (
     <motion.div initial={{ x: 50, opacity: 0 }} animate={{ x: 0, opacity: 1 }} className="flex-1 flex flex-col min-h-0 bg-white dark:bg-black absolute inset-0 z-50">
       <header className="flex items-center px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black/90 backdrop-blur-md sticky top-0 z-10 shrink-0">
-        <button onClick={() => navigate(-1)} className="mr-3 p-1.5 rounded-full text-zinc-500 dark:text-zinc-400 hover:text-black dark:text-white transition-colors"><ChevronLeft size={24} /></button>
+        <button onClick={() => navigate(-1)} className="mr-3 p-1.5 rounded-full text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 hover:text-black dark:text-white transition-colors"><ChevronLeft size={24} /></button>
         <span className="font-bold text-[15px] text-zinc-900 dark:text-zinc-100">Settings</span>
       </header>
 
@@ -935,20 +954,20 @@ const SettingsScreen = () => {
           <button 
             onClick={() => setShowVerifyModal(true)}
             disabled={currentUser?.isVerified || currentUser?.verificationStatus === 'pending'}
-            className="w-full text-left bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-800 p-4 rounded-xl font-medium transition-colors disabled:opacity-50"
+            className="w-full text-left bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-200 dark:bg-zinc-200 dark:bg-zinc-800 p-4 rounded-xl font-medium transition-colors disabled:opacity-50"
           >
             {currentUser?.isVerified ? '✓ Account is verified' : currentUser?.verificationStatus === 'pending' ? 'Verification pending...' : 'Apply for verification tick'}
           </button>
           
           <button 
             onClick={handleDeactivate}
-            className="w-full text-left bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-800 p-4 rounded-xl font-medium text-orange-600 transition-colors"
+            className="w-full text-left bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-200 dark:bg-zinc-200 dark:bg-zinc-800 p-4 rounded-xl font-medium text-orange-600 transition-colors"
           >
             Deactivate account
           </button>
           <button 
             onClick={handleDelete}
-            className="w-full text-left bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-800 p-4 rounded-xl font-medium text-red-600 transition-colors"
+            className="w-full text-left bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-200 dark:bg-zinc-200 dark:bg-zinc-800 p-4 rounded-xl font-medium text-red-600 transition-colors"
           >
             Delete account
           </button>
@@ -964,7 +983,7 @@ const SettingsScreen = () => {
 
           <button 
             onClick={logout}
-            className="w-full mt-4 text-left border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-900 p-4 rounded-xl font-medium flex items-center justify-between transition-colors"
+            className="w-full mt-4 text-left border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-100 dark:bg-zinc-100 dark:bg-zinc-900 p-4 rounded-xl font-medium flex items-center justify-between transition-colors"
           >
             Log out <LogOut size={18} />
           </button>
@@ -1121,7 +1140,7 @@ const AdminDashboardScreen = () => {
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="flex-1 flex flex-col min-h-0 bg-white dark:bg-black absolute inset-0 z-50">
       <header className="flex items-center justify-between px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black/90 backdrop-blur-md sticky top-0 z-10 shrink-0">
         <div className="flex items-center">
-          <button onClick={() => navigate(-1)} className="mr-3 p-1.5 rounded-full text-zinc-500 dark:text-zinc-400 hover:text-black dark:text-white transition-colors"><ChevronLeft size={24} /></button>
+          <button onClick={() => navigate(-1)} className="mr-3 p-1.5 rounded-full text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 hover:text-black dark:text-white transition-colors"><ChevronLeft size={24} /></button>
           <span className="font-bold text-[16px] text-zinc-900 dark:text-zinc-100 flex items-center gap-2"><Trophy size={18} className="text-indigo-500" /> Admin Command Center</span>
         </div>
       </header>
@@ -1131,11 +1150,11 @@ const AdminDashboardScreen = () => {
           <button 
             key={t}
             onClick={() => setTab(t)}
-            className={cn("pb-3 px-2 text-[14px] font-bold transition-colors border-b-2 whitespace-nowrap capitalize", tab === t ? "border-indigo-500 text-indigo-500" : "border-transparent text-zinc-500 dark:text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300")}
+            className={cn("pb-3 px-2 text-[14px] font-bold transition-colors border-b-2 whitespace-nowrap capitalize", tab === t ? "border-indigo-500 text-indigo-500" : "border-transparent text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-700 dark:text-zinc-700 dark:text-zinc-300")}
           >
             {t} 
-            {t === 'verifications' && pendingRequests.length > 0 && <span className="ml-1 bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">{pendingRequests.length}</span>}
-            {t === 'reports' && pendingReports.length > 0 && <span className="ml-1 bg-amber-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">{pendingReports.length}</span>}
+            {t === 'verifications' && pendingRequests.length > 0 && <span className="ml-1 bg-red-500 text-black dark:text-white text-[10px] px-1.5 py-0.5 rounded-full">{pendingRequests.length}</span>}
+            {t === 'reports' && pendingReports.length > 0 && <span className="ml-1 bg-amber-500 text-black dark:text-white text-[10px] px-1.5 py-0.5 rounded-full">{pendingReports.length}</span>}
           </button>
         ))}
       </div>
@@ -1169,38 +1188,38 @@ const AdminDashboardScreen = () => {
           <div className="flex flex-col gap-4">
             <h2 className="font-bold text-xl dark:text-white mb-2">Verification Queue ({pendingRequests.length})</h2>
             {pendingRequests.map(user => (
-              <div key={user.id} className="p-4 border border-zinc-200 dark:border-zinc-800 rounded-xl flex flex-col gap-4 bg-white dark:bg-zinc-950">
+              <div key={user.id} className="p-4 border border-zinc-200 dark:border-zinc-800 rounded-xl flex flex-col gap-4 bg-white dark:bg-zinc-50 dark:bg-zinc-50 dark:bg-zinc-950">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <img src={user.avatar || undefined} className="w-12 h-12 rounded-full bg-zinc-200 dark:bg-zinc-800 object-cover border border-zinc-100 dark:border-zinc-800" />
                     <div className="flex flex-col">
                       <span className="font-bold text-zinc-900 dark:text-zinc-100 text-[15px]">{user.name}</span>
-                      <span className="text-zinc-500 text-[13px] font-medium">@{user.username}</span>
+                      <span className="text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 text-[13px] font-medium">@{user.username}</span>
                     </div>
                   </div>
                   <div className="flex gap-2">
-                    <button onClick={() => handleAction(user.id, 'accepted')} className="bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-[13px] font-bold transition-colors">Accept</button>
-                    <button onClick={() => handleAction(user.id, 'rejected')} className="bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 rounded-lg text-[13px] font-bold transition-colors">Reject</button>
+                    <button onClick={() => handleAction(user.id, 'accepted')} className="bg-emerald-500 hover:bg-emerald-600 text-black dark:text-white px-3 py-1.5 rounded-lg text-[13px] font-bold transition-colors">Accept</button>
+                    <button onClick={() => handleAction(user.id, 'rejected')} className="bg-red-500 hover:bg-red-600 text-black dark:text-white px-3 py-1.5 rounded-lg text-[13px] font-bold transition-colors">Reject</button>
                   </div>
                 </div>
                 
                 {user.verificationData && (
                   <div className="bg-zinc-50 dark:bg-zinc-900/50 rounded-lg p-3 text-[13px] border border-zinc-100 dark:border-zinc-800 grid grid-cols-2 gap-3">
-                    <div><span className="text-zinc-500 block text-[11px] uppercase tracking-wider font-bold mb-0.5">Full Name</span> <span className="dark:text-zinc-200">{user.verificationData.fullName}</span></div>
-                    <div><span className="text-zinc-500 block text-[11px] uppercase tracking-wider font-bold mb-0.5">Phone</span> <span className="dark:text-zinc-200">{user.verificationData.phoneNumber}</span></div>
-                    <div className="col-span-2"><span className="text-zinc-500 block text-[11px] uppercase tracking-wider font-bold mb-0.5">Address</span> <span className="dark:text-zinc-200">{user.verificationData.address}</span></div>
-                    <div><span className="text-zinc-500 block text-[11px] uppercase tracking-wider font-bold mb-0.5">NID / BID</span> <span className="dark:text-zinc-200">{user.verificationData.nidBid}</span></div>
-                    <div><span className="text-zinc-500 block text-[11px] uppercase tracking-wider font-bold mb-0.5">DOB</span> <span className="dark:text-zinc-200">{user.verificationData.birthDate}</span></div>
+                    <div><span className="text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 block text-[11px] uppercase tracking-wider font-bold mb-0.5">Full Name</span> <span className="dark:text-zinc-800 dark:text-zinc-800 dark:text-zinc-200">{user.verificationData.fullName}</span></div>
+                    <div><span className="text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 block text-[11px] uppercase tracking-wider font-bold mb-0.5">Phone</span> <span className="dark:text-zinc-800 dark:text-zinc-800 dark:text-zinc-200">{user.verificationData.phoneNumber}</span></div>
+                    <div className="col-span-2"><span className="text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 block text-[11px] uppercase tracking-wider font-bold mb-0.5">Address</span> <span className="dark:text-zinc-800 dark:text-zinc-800 dark:text-zinc-200">{user.verificationData.address}</span></div>
+                    <div><span className="text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 block text-[11px] uppercase tracking-wider font-bold mb-0.5">NID / BID</span> <span className="dark:text-zinc-800 dark:text-zinc-800 dark:text-zinc-200">{user.verificationData.nidBid}</span></div>
+                    <div><span className="text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 block text-[11px] uppercase tracking-wider font-bold mb-0.5">DOB</span> <span className="dark:text-zinc-800 dark:text-zinc-800 dark:text-zinc-200">{user.verificationData.birthDate}</span></div>
                     <div className="col-span-2 mt-2 pt-2 border-t border-zinc-200 dark:border-zinc-800 grid grid-cols-2 gap-3">
-                      <div><span className="text-amber-500 block text-[11px] uppercase tracking-wider font-bold mb-0.5">Nagad Number</span> <span className="dark:text-zinc-200 font-mono text-xs">{user.verificationData.nagadNumber}</span></div>
-                      <div><span className="text-amber-500 block text-[11px] uppercase tracking-wider font-bold mb-0.5">TrxID</span> <span className="dark:text-zinc-200 font-mono text-xs">{user.verificationData.transactionId}</span></div>
+                      <div><span className="text-amber-500 block text-[11px] uppercase tracking-wider font-bold mb-0.5">Nagad Number</span> <span className="dark:text-zinc-800 dark:text-zinc-800 dark:text-zinc-200 font-mono text-xs">{user.verificationData.nagadNumber}</span></div>
+                      <div><span className="text-amber-500 block text-[11px] uppercase tracking-wider font-bold mb-0.5">TrxID</span> <span className="dark:text-zinc-800 dark:text-zinc-800 dark:text-zinc-200 font-mono text-xs">{user.verificationData.transactionId}</span></div>
                     </div>
                   </div>
                 )}
               </div>
             ))}
             {pendingRequests.length === 0 && (
-              <div className="text-center py-12 text-zinc-500 border border-dashed border-zinc-300 dark:border-zinc-800 rounded-xl font-medium">
+              <div className="text-center py-12 text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 border border-dashed border-zinc-300 dark:border-zinc-800 rounded-xl font-medium">
                 No pending requests in the queue
               </div>
             )}
@@ -1212,18 +1231,18 @@ const AdminDashboardScreen = () => {
              <h2 className="font-bold text-xl dark:text-white mb-2">Verified Users</h2>
              <div className="flex flex-col gap-3">
                {verifiedUsers.map(user => (
-                 <div key={user.id} className="p-4 border border-zinc-200 dark:border-zinc-800 rounded-xl flex items-center justify-between bg-white dark:bg-zinc-950">
+                 <div key={user.id} className="p-4 border border-zinc-200 dark:border-zinc-800 rounded-xl flex items-center justify-between bg-white dark:bg-zinc-50 dark:bg-zinc-50 dark:bg-zinc-950">
                    <div className="flex items-center gap-3">
                      <img src={user.avatar || undefined} className="w-10 h-10 rounded-full bg-zinc-200 dark:bg-zinc-800 object-cover" />
                      <div className="flex flex-col">
                        <span className="font-bold text-zinc-900 dark:text-zinc-100 text-[14px] flex items-center gap-1">
                          {user.name} <VerifiedBadge isVerified={true} />
                        </span>
-                       <span className="text-zinc-500 text-[12px] font-medium">@{user.username}</span>
+                       <span className="text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 text-[12px] font-medium">@{user.username}</span>
                      </div>
                    </div>
                    <div className="flex items-center gap-3">
-                     <div className="text-right flex flex-col text-[11px] font-semibold text-zinc-400">
+                     <div className="text-right flex flex-col text-[11px] font-semibold text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-400">
                        {user.verifiedUntil && (
                          <span className="text-amber-600 dark:text-amber-400">
                            Expires: {user.verifiedUntil?.toDate?.() ? user.verifiedUntil.toDate().toLocaleDateString() : (user.verifiedUntil as Date).toLocaleDateString()}
@@ -1235,7 +1254,7 @@ const AdminDashboardScreen = () => {
                  </div>
                ))}
                {verifiedUsers.length === 0 && (
-                 <div className="text-center py-12 text-zinc-500 border border-dashed border-zinc-300 dark:border-zinc-800 rounded-xl font-medium">
+                 <div className="text-center py-12 text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 border border-dashed border-zinc-300 dark:border-zinc-800 rounded-xl font-medium">
                    No verified users found
                  </div>
                )}
@@ -1258,32 +1277,32 @@ const AdminDashboardScreen = () => {
                            {report.status}
                          </span>
                        </div>
-                       <span className="text-[12px] text-zinc-500">{formatDistanceToNow(report.createdAt as Date)} ago</span>
+                       <span className="text-[12px] text-zinc-500 dark:text-zinc-500 dark:text-zinc-500">{formatDistanceToNow(report.createdAt as Date)} ago</span>
                      </div>
                      <div className="text-[13px] text-zinc-700 dark:text-zinc-300">
                        <span className="font-semibold text-zinc-900 dark:text-zinc-100">Reason:</span> {report.reason}
                      </div>
                      {reportedUser && (
-                       <div className="flex items-center gap-3 p-2 bg-white dark:bg-zinc-950 rounded-lg border border-zinc-100 dark:border-zinc-800">
+                       <div className="flex items-center gap-3 p-2 bg-white dark:bg-zinc-50 dark:bg-zinc-50 dark:bg-zinc-950 rounded-lg border border-zinc-100 dark:border-zinc-800">
                          <img src={reportedUser.avatar || undefined} className="w-8 h-8 rounded-full" />
                          <div className="flex flex-col flex-1">
                            <span className="font-bold text-[13px]">{reportedUser.name}</span>
-                           <span className="text-[11px] text-zinc-500">@{reportedUser.username} • {reportedUser.reportCount || 0} reports</span>
+                           <span className="text-[11px] text-zinc-500 dark:text-zinc-500 dark:text-zinc-500">@{reportedUser.username} • {reportedUser.reportCount || 0} reports</span>
                          </div>
                        </div>
                      )}
                      {report.status !== 'resolved' && (
                        <div className="flex gap-2 justify-end mt-2">
-                         <button onClick={() => handleResolveReport(report.id)} className="px-3 py-1.5 text-[12px] font-bold bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg transition-colors">Resolve</button>
-                         {reportedUser && <button onClick={() => handleBanUser(reportedUser.id, false)} className="px-3 py-1.5 text-[12px] font-bold bg-orange-500 hover:bg-orange-600 text-white rounded-lg transition-colors">Ban 7 Days</button>}
-                         {reportedUser && <button onClick={() => handleBanUser(reportedUser.id, true)} className="px-3 py-1.5 text-[12px] font-bold bg-rose-500 hover:bg-rose-600 text-white rounded-lg transition-colors">Ban Permanently</button>}
+                         <button onClick={() => handleResolveReport(report.id)} className="px-3 py-1.5 text-[12px] font-bold bg-emerald-500 hover:bg-emerald-600 text-black dark:text-white rounded-lg transition-colors">Resolve</button>
+                         {reportedUser && <button onClick={() => handleBanUser(reportedUser.id, false)} className="px-3 py-1.5 text-[12px] font-bold bg-orange-500 hover:bg-orange-600 text-black dark:text-white rounded-lg transition-colors">Ban 7 Days</button>}
+                         {reportedUser && <button onClick={() => handleBanUser(reportedUser.id, true)} className="px-3 py-1.5 text-[12px] font-bold bg-rose-500 hover:bg-rose-600 text-black dark:text-white rounded-lg transition-colors">Ban Permanently</button>}
                        </div>
                      )}
                    </div>
                  );
                })}
                {reports.length === 0 && (
-                 <div className="text-center py-12 text-zinc-500 border border-dashed border-zinc-300 dark:border-zinc-800 rounded-xl font-medium">
+                 <div className="text-center py-12 text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 border border-dashed border-zinc-300 dark:border-zinc-800 rounded-xl font-medium">
                    No reports found
                  </div>
                )}
@@ -1296,21 +1315,21 @@ const AdminDashboardScreen = () => {
              <h2 className="font-bold text-xl dark:text-white mb-2">User Registry</h2>
              <div className="flex flex-col gap-3">
                {users.map(user => (
-                 <div key={user.id} className="p-4 border border-zinc-200 dark:border-zinc-800 rounded-xl flex items-center justify-between bg-white dark:bg-zinc-950">
+                 <div key={user.id} className="p-4 border border-zinc-200 dark:border-zinc-800 rounded-xl flex items-center justify-between bg-white dark:bg-zinc-50 dark:bg-zinc-50 dark:bg-zinc-950">
                    <div className="flex items-center gap-3">
                      <img src={user.avatar || undefined} className="w-10 h-10 rounded-full bg-zinc-200 dark:bg-zinc-800 object-cover" />
                      <div className="flex flex-col">
                        <span className="font-bold text-zinc-900 dark:text-zinc-100 text-[14px] flex items-center gap-1">
-                         {user.name} {user.isVerified && <span className="w-3.5 h-3.5 bg-blue-500 rounded-full flex items-center justify-center text-white text-[8px]"><Check size={8} strokeWidth={4}/></span>}
+                         {user.name} {user.isVerified && <span className="w-3.5 h-3.5 bg-blue-500 rounded-full flex items-center justify-center text-black dark:text-white text-[8px]"><Check size={8} strokeWidth={4}/></span>}
                        </span>
-                       <span className="text-zinc-500 text-[12px] font-medium">
+                       <span className="text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 text-[12px] font-medium">
                           @{user.username} 
                           {user.bannedUntil && (user.bannedUntil?.toDate?.() || user.bannedUntil) > new Date() && <span className="text-rose-500 font-bold tracking-wide uppercase ml-1">Banned</span>}
                        </span>
                      </div>
                    </div>
                    <div className="flex items-center gap-3">
-                     <div className="text-right flex flex-col text-[11px] font-semibold text-zinc-400">
+                     <div className="text-right flex flex-col text-[11px] font-semibold text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-400">
                        <span>{user.followers?.length || 0} Followers</span>
                        <span>ID: {user.id.slice(0, 6)}...</span>
                      </div>
@@ -1334,6 +1353,9 @@ const EditProfileScreen = () => {
   const [bio, setBio] = useState(currentUser?.bio || '');
   const [avatar, setAvatar] = useState(currentUser?.avatar || '');
   const [hideBadges, setHideBadges] = useState(currentUser?.hideBadges || false);
+  const [activeBadgeId, setActiveBadgeId] = useState(currentUser?.activeBadgeId || '');
+  const [feedColor, setFeedColor] = useState(currentUser?.appThemeParams?.feedColor || '');
+  const [postBgColor, setPostBgColor] = useState(currentUser?.appThemeParams?.postBgColor || '');
   const [isUploading, setIsUploading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -1356,10 +1378,23 @@ const EditProfileScreen = () => {
        }
     }
     
-    updateProfile({ name, username: finalUsername, bio, avatar, hideBadges });
-    showToast('Profile updated!');
-    setIsSaving(false);
-    navigate('/profile');
+    try {
+      await updateProfile({ 
+        name, 
+        username: finalUsername, 
+        bio, 
+        avatar, 
+        hideBadges, 
+        activeBadgeId: activeBadgeId || null,
+        appThemeParams: { feedColor, postBgColor } 
+      });
+      showToast('Profile updated!');
+      setIsSaving(false);
+      navigate('/profile');
+    } catch (e: any) {
+      showToast('Error saving profile');
+      setIsSaving(false);
+    }
   };
 
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1380,7 +1415,7 @@ const EditProfileScreen = () => {
   return (
     <motion.div initial={{ x: 50, opacity: 0 }} animate={{ x: 0, opacity: 1 }} className="flex-1 flex flex-col min-h-0 bg-white dark:bg-black absolute inset-0 z-50">
       <header className="flex items-center justify-between px-5 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black/90 backdrop-blur-md sticky top-0 z-10 shrink-0">
-        <button onClick={() => navigate(-1)} className="text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 hover:text-black dark:text-white transition-colors"><ChevronLeft size={24} /></button>
+        <button onClick={() => navigate(-1)} className="text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 hover:text-black dark:text-white transition-colors"><ChevronLeft size={24} /></button>
         <span className="font-bold text-[15px] tracking-wide text-zinc-900 dark:text-zinc-100">Edit Profile</span>
         <button onClick={handleSave} disabled={isUploading || isSaving} className="font-bold text-[13px] uppercase tracking-wider text-indigo-400 hover:text-indigo-300 disabled:opacity-50">Save</button>
       </header>
@@ -1395,32 +1430,62 @@ const EditProfileScreen = () => {
         </div>
 
         <div className="flex flex-col gap-2">
-          <label className="text-[12px] uppercase tracking-wider font-bold text-zinc-500 dark:text-zinc-500 px-1">Name</label>
+          <label className="text-[12px] uppercase tracking-wider font-bold text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 px-1">Name</label>
           <div className="bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-3 rounded-xl">
             <input type="text" value={name} onChange={e => setName(e.target.value)} className="bg-transparent w-full outline-none text-black dark:text-white text-[15px]" />
           </div>
         </div>
 
         <div className="flex flex-col gap-2">
-          <label className="text-[12px] uppercase tracking-wider font-bold text-zinc-500 dark:text-zinc-500 px-1">Username</label>
+          <label className="text-[12px] uppercase tracking-wider font-bold text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 px-1">Username</label>
           <div className="bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-3 rounded-xl flex items-center">
-            <span className="text-zinc-500 dark:text-zinc-500 mr-1">@</span>
+            <span className="text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 mr-1">@</span>
             <input type="text" value={username} onChange={e => setUsername(e.target.value)} className="bg-transparent flex-1 outline-none text-black dark:text-white text-[15px]" />
           </div>
         </div>
 
         <div className="flex flex-col gap-2">
-          <label className="text-[12px] uppercase tracking-wider font-bold text-zinc-500 dark:text-zinc-500 px-1">Bio</label>
+          <label className="text-[12px] uppercase tracking-wider font-bold text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 px-1">Bio</label>
           <div className="bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-3 rounded-xl">
             <textarea value={bio} onChange={e => setBio(e.target.value)} className="bg-transparent w-full outline-none text-black dark:text-white text-[15px] resize-none h-24" />
           </div>
         </div>
 
+        {currentUser?.badges && currentUser.badges.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <label className="text-[12px] uppercase tracking-wider font-bold text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 px-1">Active Badge</label>
+            <div className="bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-3 rounded-xl">
+              <select value={activeBadgeId} onChange={(e) => setActiveBadgeId(e.target.value)} className="bg-transparent w-full outline-none text-black dark:text-white text-[15px]">
+                <option value="" className="text-black">No Badge</option>
+                {currentUser.badges.map(b => (
+                  <option key={b.id} value={b.id} className="text-black">{b.icon} {b.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
+
+        <div className="flex flex-col gap-2">
+          <label className="text-[12px] uppercase tracking-wider font-bold text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 px-1">App Theme (Feed Color)</label>
+          <div className="bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-3 rounded-xl flex gap-3 items-center">
+            <input type="color" value={feedColor} onChange={e => setFeedColor(e.target.value)} className="w-8 h-8 rounded shrink-0 bg-transparent p-0 border-0" />
+            <input type="text" placeholder="Default" value={feedColor} onChange={e => setFeedColor(e.target.value)} className="bg-transparent flex-1 outline-none text-[15px]" />
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <label className="text-[12px] uppercase tracking-wider font-bold text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 px-1">App Theme (Post Background Color)</label>
+          <div className="bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-3 rounded-xl flex gap-3 items-center">
+            <input type="color" value={postBgColor} onChange={e => setPostBgColor(e.target.value)} className="w-8 h-8 rounded shrink-0 bg-transparent p-0 border-0" />
+            <input type="text" placeholder="Default" value={postBgColor} onChange={e => setPostBgColor(e.target.value)} className="bg-transparent flex-1 outline-none text-[15px]" />
+          </div>
+        </div>
+
         <div className="flex items-center justify-between p-1 mt-2">
-          <span className="font-bold text-[14px]">Hide Badges</span>
+          <span className="font-bold text-[14px]">Hide All Badges</span>
           <button 
             onClick={() => setHideBadges(!hideBadges)} 
-            className="w-12 h-6 bg-zinc-300 dark:bg-zinc-700 rounded-full relative transition-colors shadow-inner"
+            className="w-12 h-6 bg-zinc-300 dark:bg-zinc-300 dark:bg-zinc-300 dark:bg-zinc-700 rounded-full relative transition-colors shadow-inner"
             style={{ backgroundColor: hideBadges ? '#6366f1' : undefined }}
           >
             <div className={cn("absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform shadow-sm", hideBadges && "translate-x-6")} />
@@ -1435,11 +1500,11 @@ const EditProfileScreen = () => {
 const FollowListModal = ({ isOpen, onClose, title, users }: { isOpen: boolean, onClose: () => void, title: string, users: User[] }) => {
   if (!isOpen) return null;
   return (
-    <div className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[100] bg-white dark:bg-transparent/50 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="bg-white dark:bg-zinc-900 w-full max-w-[320px] max-h-[70vh] rounded-2xl shadow-xl flex flex-col relative overflow-hidden animate-in fade-in zoom-in-95 duration-200">
         <div className="flex items-center justify-between p-4 border-b border-zinc-200 dark:border-zinc-800">
           <h2 className="font-bold text-[15px]">{title}</h2>
-          <button onClick={onClose} className="p-1 rounded-full text-zinc-500 hover:text-black dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
+          <button onClick={onClose} className="p-1 rounded-full text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 hover:text-black dark:hover:text-black dark:text-white hover:bg-zinc-100 dark:hover:bg-zinc-200 dark:bg-zinc-200 dark:bg-zinc-800 transition-colors">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
           </button>
         </div>
@@ -1449,11 +1514,11 @@ const FollowListModal = ({ isOpen, onClose, title, users }: { isOpen: boolean, o
               <img src={u.avatar || undefined} alt="" className="w-10 h-10 rounded-full object-cover bg-zinc-200 dark:bg-zinc-800 shrink-0" />
               <div className="min-w-0 flex-1">
                 <div className="font-bold text-[14px] truncate">{u.username}</div>
-                <div className="text-[12px] text-zinc-500 truncate">{u.name}</div>
+                <div className="text-[12px] text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 truncate">{u.name}</div>
               </div>
             </Link>
           ))}
-          {users.length === 0 && <div className="text-zinc-500 text-center py-4 text-[13px]">List is empty</div>}
+          {users.length === 0 && <div className="text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 text-center py-4 text-[13px]">List is empty</div>}
         </div>
       </div>
     </div>
@@ -1567,26 +1632,26 @@ const StoryCreatorModal = ({ onClose }: { onClose: () => void }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-[250] bg-black/95 flex items-center justify-center sm:p-4 text-white">
-      <div className="relative w-full h-full sm:h-[85vh] sm:aspect-[9/16] sm:max-h-[90vh] bg-zinc-900 sm:rounded-[2.5rem] overflow-hidden flex flex-col shadow-2xl sm:border-[8px] sm:border-zinc-800">
+    <div className="fixed inset-0 z-[250] bg-white dark:bg-transparent/95 flex items-center justify-center sm:p-4 text-black dark:text-white">
+      <div className="relative w-full h-full sm:h-[85vh] sm:aspect-[9/16] sm:max-h-[90vh] bg-zinc-100 dark:bg-zinc-100 dark:bg-zinc-900 sm:rounded-[2.5rem] overflow-hidden flex flex-col shadow-2xl sm:border-[8px] sm:border-zinc-200 dark:border-zinc-200 dark:border-zinc-800">
         <div className="flex items-center justify-between p-4 z-20 sticky top-0 bg-gradient-to-b from-black/80 to-transparent">
         <button onClick={onClose} className="p-2"><ChevronLeft size={28} /></button>
         <div className="flex gap-4">
-          <label className="cursor-pointer p-2 bg-black/40 rounded-full flex items-center justify-center">
+          <label className="cursor-pointer p-2 bg-white dark:bg-transparent/40 rounded-full flex items-center justify-center">
             <ImageIcon size={24} />
             <input id="story-sticker" type="file" accept="image/*" className="hidden" onChange={handleStickerChange} />
           </label>
-          <button onClick={() => setIsAddingPoll(true)} className="p-2 bg-black/40 rounded-full disabled:opacity-50" disabled={!!pollOverlay}><BarChart2 size={24} /></button>
-          <button onClick={() => setIsAddingText(true)} className="p-2 bg-black/40 rounded-full"><Type size={24} /></button>
+          <button onClick={() => setIsAddingPoll(true)} className="p-2 bg-white dark:bg-transparent/40 rounded-full disabled:opacity-50" disabled={!!pollOverlay}><BarChart2 size={24} /></button>
+          <button onClick={() => setIsAddingText(true)} className="p-2 bg-white dark:bg-transparent/40 rounded-full"><Type size={24} /></button>
           {!imageUrl && (
-            <div className="flex items-center bg-black/40 rounded-full px-2 gap-1 overflow-hidden transition-all hide-scrollbar w-32 py-1">
+            <div className="flex items-center bg-white dark:bg-transparent/40 rounded-full px-2 gap-1 overflow-hidden transition-all hide-scrollbar w-32 py-1">
               <Palette size={20} className="shrink-0 ml-1" />
               {colors.map(c => (
                 <button key={c} onClick={() => setBackgroundColor(c)} className="w-5 h-5 rounded-full shrink-0 border border-white/20" style={{ backgroundColor: c }} />
               ))}
             </div>
           )}
-          <button className="p-2 bg-black/40 rounded-full" onClick={() => {
+          <button className="p-2 bg-white dark:bg-transparent/40 rounded-full" onClick={() => {
             if (selectedSong) setSelectedSong(null);
             else setShowSongPicker(true);
           }}>
@@ -1602,7 +1667,7 @@ const StoryCreatorModal = ({ onClose }: { onClose: () => void }) => {
         <div className="absolute inset-0 pointer-events-none">
           {(imageOverlays.length > 0 || textOverlays.length > 0) && (
              <div className="absolute top-20 left-0 w-full flex justify-center z-10 pointer-events-none">
-               <span className="bg-black/50 text-white/70 text-[10px] px-3 py-1.5 rounded-full font-bold uppercase tracking-wider backdrop-blur-sm">Drag to move • Scroll to resize</span>
+               <span className="bg-white dark:bg-transparent/50 text-black dark:text-white/70 text-[10px] px-3 py-1.5 rounded-full font-bold uppercase tracking-wider backdrop-blur-sm">Drag to move • Scroll to resize</span>
              </div>
           )}
           {imageOverlays.map((io, i) => (
@@ -1642,7 +1707,7 @@ const StoryCreatorModal = ({ onClose }: { onClose: () => void }) => {
                   newOverlays[i].scale = Math.min(Math.max(0.5, newOverlays[i].scale), 4);
                   setTextOverlays(newOverlays);
                }}
-               className="absolute text-3xl font-bold bg-black/50 px-4 py-2 rounded-xl text-white drop-shadow-md cursor-move pointer-events-auto whitespace-pre-wrap"
+               className="absolute text-3xl font-bold bg-white dark:bg-transparent/50 px-4 py-2 rounded-xl text-black dark:text-white drop-shadow-md cursor-move pointer-events-auto whitespace-pre-wrap"
                style={{ x: to.x, y: to.y, scale: to.scale, left: '50%', top: '50%', marginLeft: '-50%', marginTop: '-20px', minWidth: 'max-content' }} // approximate center
              >
                {to.text}
@@ -1672,11 +1737,11 @@ const StoryCreatorModal = ({ onClose }: { onClose: () => void }) => {
         
         {/* Active Text Edit */}
         {isAddingText && (
-          <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center z-30 px-4">
+          <div className="absolute inset-0 bg-white dark:bg-transparent/80 flex flex-col items-center justify-center z-30 px-4">
             <textarea 
               value={text} 
               onChange={e => setText(e.target.value)}
-              className="bg-transparent text-white text-3xl font-bold text-center w-full outline-none placeholder:text-white/50 resize-none"
+              className="bg-transparent text-black dark:text-white text-3xl font-bold text-center w-full outline-none placeholder:text-black dark:text-white/50 resize-none"
               placeholder="Type something..."
               autoFocus
             />
@@ -1686,14 +1751,14 @@ const StoryCreatorModal = ({ onClose }: { onClose: () => void }) => {
 
         {/* Active Poll Edit */}
         {isAddingPoll && (
-          <div className="absolute inset-0 bg-black/90 flex flex-col items-center justify-center z-30 px-4">
-            <div className="w-full max-w-sm bg-zinc-900 p-6 rounded-2xl flex flex-col gap-4">
+          <div className="absolute inset-0 bg-white dark:bg-transparent/90 flex flex-col items-center justify-center z-30 px-4">
+            <div className="w-full max-w-sm bg-zinc-100 dark:bg-zinc-100 dark:bg-zinc-900 p-6 rounded-2xl flex flex-col gap-4">
               <input 
                 type="text" 
                 value={pollQuestion}
                 onChange={e => setPollQuestion(e.target.value)}
                 placeholder="Ask a question..."
-                className="bg-transparent text-white text-xl font-bold text-center w-full outline-none placeholder:text-white/50 border-b border-white/20 pb-2"
+                className="bg-transparent text-black dark:text-white text-xl font-bold text-center w-full outline-none placeholder:text-black dark:text-white/50 border-b border-white/20 pb-2"
                 autoFocus
               />
               {pollOptions.map((opt, i) => (
@@ -1707,21 +1772,21 @@ const StoryCreatorModal = ({ onClose }: { onClose: () => void }) => {
                       setPollOptions(newOpts);
                     }}
                     placeholder={`Option ${i + 1}`}
-                    className="w-full bg-zinc-800 text-white px-4 py-3 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium"
+                    className="w-full bg-zinc-200 dark:bg-zinc-200 dark:bg-zinc-800 text-black dark:text-white px-4 py-3 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium"
                   />
                 </div>
               ))}
               {pollOptions.length < 4 && (
                 <button 
                   onClick={() => setPollOptions([...pollOptions, ''])}
-                  className="text-indigo-400 font-bold py-2 hover:bg-zinc-800 rounded-xl transition-colors"
+                  className="text-indigo-400 font-bold py-2 hover:bg-zinc-200 dark:bg-zinc-200 dark:bg-zinc-800 rounded-xl transition-colors"
                 >
                   + Add Option
                 </button>
               )}
             </div>
             <button onClick={addPollOverlay} className="absolute top-4 right-4 bg-white text-black px-4 py-2 rounded-full font-bold">Done</button>
-            <button onClick={() => setIsAddingPoll(false)} className="absolute top-4 left-4 text-white px-4 py-2 rounded-full font-bold">Cancel</button>
+            <button onClick={() => setIsAddingPoll(false)} className="absolute top-4 left-4 text-black dark:text-white px-4 py-2 rounded-full font-bold">Cancel</button>
           </div>
         )}
 
@@ -1732,9 +1797,9 @@ const StoryCreatorModal = ({ onClose }: { onClose: () => void }) => {
               initial={{ y: '100%' }}
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
-              className="absolute inset-x-0 bottom-0 top-1/2 bg-zinc-900 rounded-t-2xl z-40 flex flex-col pointer-events-auto"
+              className="absolute inset-x-0 bottom-0 top-1/2 bg-zinc-100 dark:bg-zinc-100 dark:bg-zinc-900 rounded-t-2xl z-40 flex flex-col pointer-events-auto"
             >
-              <div className="p-4 font-bold border-b border-zinc-800 flex items-center justify-between">
+              <div className="p-4 font-bold border-b border-zinc-200 dark:border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
                 <span>Select Music</span>
                 <button onClick={() => setShowSongPicker(false)} className="p-1"><ChevronLeft size={20} className="rotate-270" /></button>
               </div>
@@ -1742,15 +1807,15 @@ const StoryCreatorModal = ({ onClose }: { onClose: () => void }) => {
                 {mockSongs.map(song => (
                   <button 
                     key={song.title} 
-                    className="w-full flex items-center gap-3 p-3 hover:bg-zinc-800 rounded-xl text-left transition-colors"
+                    className="w-full flex items-center gap-3 p-3 hover:bg-zinc-200 dark:bg-zinc-200 dark:bg-zinc-800 rounded-xl text-left transition-colors"
                     onClick={() => { setSelectedSong(song); setShowSongPicker(false); }}
                   >
-                    <div className="w-12 h-12 bg-zinc-800 rounded-lg flex items-center justify-center shrink-0 border border-zinc-700">
-                      <Music size={20} className="text-zinc-400" />
+                    <div className="w-12 h-12 bg-zinc-200 dark:bg-zinc-200 dark:bg-zinc-800 rounded-lg flex items-center justify-center shrink-0 border border-zinc-700">
+                      <Music size={20} className="text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-400" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="font-bold text-white truncate">{song.title}</div>
-                      <div className="text-sm text-zinc-400 truncate">{song.artist}</div>
+                      <div className="font-bold text-black dark:text-white truncate">{song.title}</div>
+                      <div className="text-sm text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 truncate">{song.artist}</div>
                     </div>
                   </button>
                 ))}
@@ -1761,7 +1826,7 @@ const StoryCreatorModal = ({ onClose }: { onClose: () => void }) => {
       </div>
 
       <div className="p-4 flex items-center justify-between z-20 bg-gradient-to-t from-black/80 to-transparent">
-        <label className="cursor-pointer p-3 bg-zinc-800 rounded-full">
+        <label className="cursor-pointer p-3 bg-zinc-200 dark:bg-zinc-200 dark:bg-zinc-800 rounded-full">
           <ImageIcon size={24} />
           <input id="story-media" type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
         </label>
@@ -1834,8 +1899,8 @@ const StoryViewerModal = ({ stories, user, currentUser, onClose }: { stories: St
   if (!story) return null;
 
   return (
-    <div className="fixed inset-0 z-[200] bg-black/95 flex flex-col items-center justify-center animate-in fade-in duration-200">
-      <div className="w-full h-full max-w-md relative flex flex-col bg-zinc-900 overflow-hidden shadow-2xl sm:rounded-3xl sm:h-[85vh] sm:border border-zinc-800">
+    <div className="fixed inset-0 z-[200] bg-white dark:bg-transparent/95 flex flex-col items-center justify-center animate-in fade-in duration-200">
+      <div className="w-full h-full max-w-md relative flex flex-col bg-zinc-100 dark:bg-zinc-100 dark:bg-zinc-900 overflow-hidden shadow-2xl sm:rounded-3xl sm:h-[85vh] sm:border border-zinc-200 dark:border-zinc-200 dark:border-zinc-800">
         <div className="flex gap-1 p-3 absolute top-0 w-full z-20 bg-gradient-to-b from-black/50 to-transparent">
           {stories.map((s, i) => (
             <div key={s.id} className="h-1 flex-1 bg-white/30 rounded-full overflow-hidden">
@@ -1844,11 +1909,11 @@ const StoryViewerModal = ({ stories, user, currentUser, onClose }: { stories: St
             </div>
           ))}
         </div>
-        <div className="absolute top-6 left-0 w-full flex items-center justify-between px-4 z-20 text-white mt-1">
+        <div className="absolute top-6 left-0 w-full flex items-center justify-between px-4 z-20 text-black dark:text-white mt-1">
           <div className="flex items-center gap-2 drop-shadow-md">
             <img src={user.avatar || undefined} className="w-8 h-8 rounded-full border border-white/50" />
             <span className="font-bold text-[13px]">{user.username}</span>
-            <span className="text-white/70 text-[11px] font-medium">{formatDistanceToNow(story.createdAt)}</span>
+            <span className="text-black dark:text-white/70 text-[11px] font-medium">{formatDistanceToNow(story.createdAt)}</span>
           </div>
           <div className="flex items-center gap-1">
             {currentUser?.id === story.userId && (
@@ -1866,12 +1931,12 @@ const StoryViewerModal = ({ stories, user, currentUser, onClose }: { stories: St
                     setIsDeleting(false);
                   }
                 }} 
-                className="p-2 text-white/80 hover:text-red-400 hover:bg-white/20 rounded-full transition-colors drop-shadow-md"
+                className="p-2 text-black dark:text-white/80 hover:text-red-400 hover:bg-white/20 rounded-full transition-colors drop-shadow-md"
               >
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
               </button>
             )}
-            <button onClick={onClose} className="p-2 text-white hover:bg-white/20 rounded-full drop-shadow-md transition-colors">
+            <button onClick={onClose} className="p-2 text-black dark:text-white hover:bg-white/20 rounded-full drop-shadow-md transition-colors">
                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
             </button>
           </div>
@@ -1890,17 +1955,17 @@ const StoryViewerModal = ({ stories, user, currentUser, onClose }: { stories: St
           ))}
 
           {story.textOverlays?.map((to, i) => (
-             <div key={i} className="absolute text-3xl font-bold bg-black/50 px-4 py-2 rounded-xl text-white drop-shadow-md z-10 pointer-events-none whitespace-pre-wrap min-w-max" style={{ left: `calc(50% + ${to.x}px)`, top: `calc(50% + ${to.y}px)`, transform: `translate(-50%, -50%) scale(${to.scale || 1})` }}>
+             <div key={i} className="absolute text-3xl font-bold bg-white dark:bg-transparent/50 px-4 py-2 rounded-xl text-black dark:text-white drop-shadow-md z-10 pointer-events-none whitespace-pre-wrap min-w-max" style={{ left: `calc(50% + ${to.x}px)`, top: `calc(50% + ${to.y}px)`, transform: `translate(-50%, -50%) scale(${to.scale || 1})` }}>
                {to.text}
              </div>
           ))}
 
           {story.song && (
-            <div className="absolute top-20 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-full flex items-center gap-2 z-10 animate-fade-in pointer-events-none shadow-lg border border-white/10">
-              <Music size={14} className="text-white animate-pulse" />
-              <div className="flex flex-col text-white">
+            <div className="absolute top-20 left-1/2 -translate-x-1/2 bg-white dark:bg-transparent/60 backdrop-blur-md px-3 py-1.5 rounded-full flex items-center gap-2 z-10 animate-fade-in pointer-events-none shadow-lg border border-white/10">
+              <Music size={14} className="text-black dark:text-white animate-pulse" />
+              <div className="flex flex-col text-black dark:text-white">
                  <span className="text-[11px] font-bold leading-tight">{story.song.title}</span>
-                 <span className="text-[9px] text-white/70 leading-tight">{story.song.artist}</span>
+                 <span className="text-[9px] text-black dark:text-white/70 leading-tight">{story.song.artist}</span>
               </div>
             </div>
           )}
@@ -1946,7 +2011,7 @@ const StoryViewerModal = ({ stories, user, currentUser, onClose }: { stories: St
                          )}
                          <span className="relative z-10 flex items-center w-full" style={{ justifyContent: hasVoted ? 'space-between' : 'center' }}>
                            <span className={cn(myVote?.optionIndex === i ? "font-bold text-indigo-600" : "")}>{opt}</span>
-                           {hasVoted && <span className="text-xs font-bold text-zinc-500">{percent}%</span>}
+                           {hasVoted && <span className="text-xs font-bold text-zinc-500 dark:text-zinc-500 dark:text-zinc-500">{percent}%</span>}
                          </span>
                        </button>
                      );
@@ -1964,8 +2029,8 @@ const StoryViewerModal = ({ stories, user, currentUser, onClose }: { stories: St
           {/* Comments Display */}
           <div className="absolute bottom-[80px] left-4 max-w-[80%] max-h-[30%] overflow-y-auto z-30 flex flex-col-reverse gap-2 mask-image-bottom pointer-events-none hide-scrollbar">
             {comments.map((c) => (
-              <div key={c.id} className="bg-black/40 backdrop-blur-md rounded-2xl px-3 py-1.5 text-white/90 text-[12px] inline-flex items-center gap-2 max-w-max border border-white/10 animate-fade-in shadow-md">
-                <span className="font-bold text-[10px] text-white/50">{currentUser?.id === c.userId ? currentUser?.username : 'User'}</span>
+              <div key={c.id} className="bg-white dark:bg-transparent/40 backdrop-blur-md rounded-2xl px-3 py-1.5 text-black dark:text-white/90 text-[12px] inline-flex items-center gap-2 max-w-max border border-white/10 animate-fade-in shadow-md">
+                <span className="font-bold text-[10px] text-black dark:text-white/50">{currentUser?.id === c.userId ? currentUser?.username : 'User'}</span>
                 <span className="break-words">{c.text}</span>
               </div>
             ))}
@@ -1998,11 +2063,11 @@ const StoryViewerModal = ({ stories, user, currentUser, onClose }: { stories: St
               placeholder="Reply..." 
               value={comment}
               onChange={e => setComment(e.target.value)}
-              className="flex-1 bg-black/40 border border-white/30 text-white rounded-full px-4 py-2.5 text-[13px] placeholder:text-white/60 focus:outline-none focus:border-white/60 focus:bg-black/60 transition-all backdrop-blur-sm"
+              className="flex-1 bg-white dark:bg-transparent/40 border border-white/30 text-black dark:text-white rounded-full px-4 py-2.5 text-[13px] placeholder:text-black dark:text-white/60 focus:outline-none focus:border-white/60 focus:bg-white dark:bg-black/60 transition-all backdrop-blur-sm"
               onFocus={(e) => { e.stopPropagation(); }}
             />
             {comment.trim() ? (
-              <button disabled={!comment.trim()} className="absolute right-14 text-white/80 p-1 opacity-80 hover:opacity-100 transition-opacity">
+              <button disabled={!comment.trim()} className="absolute right-14 text-black dark:text-white/80 p-1 opacity-80 hover:opacity-100 transition-opacity">
                 Send
               </button>
             ) : null}
@@ -2032,7 +2097,7 @@ const StoryViewerModal = ({ stories, user, currentUser, onClose }: { stories: St
                   setIsLiking(false);
                 }
               }}
-              className="text-white hover:text-red-500 hover:scale-110 p-2 rounded-full transition-all drop-shadow-md bg-black/20 backdrop-blur-sm z-30"
+              className="text-black dark:text-white hover:text-red-500 hover:scale-110 p-2 rounded-full transition-all drop-shadow-md bg-white dark:bg-transparent/20 backdrop-blur-sm z-30"
             >
               <Heart size={26} fill={hasLiked ? "currentColor" : "none"} className={hasLiked ? "text-red-500" : ""} />
             </button>
@@ -2041,7 +2106,7 @@ const StoryViewerModal = ({ stories, user, currentUser, onClose }: { stories: St
       </div>
       
       {/* Desktop Close Button outside container */}
-      <button onClick={onClose} className="hidden sm:flex absolute top-6 right-6 p-3 text-white hover:bg-white/20 rounded-full transition-colors z-[210]">
+      <button onClick={onClose} className="hidden sm:flex absolute top-6 right-6 p-3 text-black dark:text-white hover:bg-white/20 rounded-full transition-colors z-[210]">
          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
       </button>
     </div>
@@ -2167,9 +2232,9 @@ const StoriesBar = () => {
               </div>
             </div>
             <div className="absolute bottom-5 right-0 bg-indigo-500 rounded-full w-5 h-5 flex items-center justify-center shadow-sm cursor-pointer z-10 hover:scale-110 transition-transform" onClick={() => setIsCreatorOpen(true)}>
-              <PlusSquare size={12} className="text-white" />
+              <PlusSquare size={12} className="text-black dark:text-white" />
             </div>
-            <span className="text-[11px] text-zinc-500 dark:text-zinc-400">Your story</span>
+            <span className="text-[11px] text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-400">Your story</span>
           </div>
           
           {userIdsWithStories.map(uid => {
@@ -2230,30 +2295,32 @@ const FeedScreen = () => {
     }
   }, [posts, followingIds, currentUser, feedType, sessionSeed]);
 
+  const feedContainerStyle = currentUser?.appThemeParams?.feedColor ? { backgroundColor: currentUser.appThemeParams.feedColor } : {};
+
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex-1 flex flex-col min-h-0 bg-white dark:bg-black">
-      <header className="px-5 pt-4 pb-2 flex flex-col border-b border-zinc-200 dark:border-zinc-800 sticky top-0 bg-white/90 dark:bg-black/90 backdrop-blur-md z-40 shrink-0">
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex-1 flex flex-col min-h-0 bg-white dark:bg-black" style={feedContainerStyle}>
+      <header className="px-5 pt-4 pb-2 flex flex-col border-b border-zinc-200 dark:border-zinc-800 sticky top-0 bg-white/90 dark:bg-white dark:bg-transparent/90 backdrop-blur-md z-40 shrink-0" style={feedContainerStyle}>
         <div className="flex justify-between items-center mb-3">
           <span className="font-bold text-xl italic text-zinc-900 dark:text-zinc-100">FineWord</span>
           <div className="flex gap-4 items-center mt-1 lg:hidden">
             <button 
               onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')} 
-              className="text-zinc-700 dark:text-zinc-300 hover:text-black dark:hover:text-white transition-colors"
+              className="text-zinc-700 dark:text-zinc-300 hover:text-black dark:hover:text-black dark:text-white transition-colors"
             >
               {theme === 'light' ? <Moon size={22} /> : <Sun size={22} />}
             </button>
             <Link to="/notifications" className="relative">
-              <Heart size={24} className="text-zinc-700 dark:text-zinc-300 hover:text-black dark:hover:text-white transition-colors" />
+              <Heart size={24} className="text-zinc-700 dark:text-zinc-300 hover:text-black dark:hover:text-black dark:text-white transition-colors" />
               {unseenNotificationCount > 0 && (
-                <div className="absolute -top-1.5 -right-2 h-[18px] min-w-[18px] px-1 bg-red-500 rounded-full border border-white dark:border-black flex items-center justify-center text-[10px] font-bold text-white pointer-events-none shadow-sm">
+                <div className="absolute -top-1.5 -right-2 h-[18px] min-w-[18px] px-1 bg-red-500 rounded-full border border-white dark:border-black flex items-center justify-center text-[10px] font-bold text-black dark:text-white pointer-events-none shadow-sm">
                   {unseenNotificationCount > 99 ? '99+' : unseenNotificationCount}
                 </div>
               )}
             </Link>
             <Link to="/chat" className="relative">
-              <MessageCircle size={24} className="text-zinc-700 dark:text-zinc-300 hover:text-black dark:hover:text-white transition-colors" />
+              <MessageCircle size={24} className="text-zinc-700 dark:text-zinc-300 hover:text-black dark:hover:text-black dark:text-white transition-colors" />
               {unseenMessageCount > 0 && (
-                <div className="absolute -top-1.5 -right-2 h-[18px] min-w-[18px] px-1 bg-red-500 rounded-full border border-white dark:border-black flex items-center justify-center text-[10px] font-bold text-white pointer-events-none shadow-sm">
+                <div className="absolute -top-1.5 -right-2 h-[18px] min-w-[18px] px-1 bg-red-500 rounded-full border border-white dark:border-black flex items-center justify-center text-[10px] font-bold text-black dark:text-white pointer-events-none shadow-sm">
                    {unseenMessageCount > 99 ? '99+' : unseenMessageCount}
                 </div>
               )}
@@ -2263,13 +2330,13 @@ const FeedScreen = () => {
         <div className="flex gap-4 px-1">
           <button 
             onClick={() => setFeedType('latest')} 
-            className={cn("pb-2 px-2 text-[14px] font-bold transition-colors border-b-2", feedType === 'latest' ? "border-black dark:border-white text-black dark:text-white" : "border-transparent text-zinc-500")}
+            className={cn("pb-2 px-2 text-[14px] font-bold transition-colors border-b-2", feedType === 'latest' ? "border-black dark:border-white text-black dark:text-white" : "border-transparent text-zinc-500 dark:text-zinc-500 dark:text-zinc-500")}
           >
             Latest
           </button>
           <button 
             onClick={() => setFeedType('following')} 
-            className={cn("pb-2 px-2 text-[14px] font-bold transition-colors border-b-2", feedType === 'following' ? "border-black dark:border-white text-black dark:text-white" : "border-transparent text-zinc-500")}
+            className={cn("pb-2 px-2 text-[14px] font-bold transition-colors border-b-2", feedType === 'following' ? "border-black dark:border-white text-black dark:text-white" : "border-transparent text-zinc-500 dark:text-zinc-500 dark:text-zinc-500")}
           >
             Following
           </button>
@@ -2279,7 +2346,7 @@ const FeedScreen = () => {
         <StoriesBar />
         {displayPosts.length === 0 ? (
           <div className="flex flex-col items-center justify-center p-10 h-64 text-center">
-            <p className="text-zinc-500 dark:text-zinc-400 font-medium">No posts here yet.</p>
+            <p className="text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 font-medium">No posts here yet.</p>
           </div>
         ) : (
           displayPosts.map((post) => (
@@ -2314,6 +2381,14 @@ const NotificationsScreen = () => {
       if (changed) setActors(newActors);
     };
     fetchActors();
+
+    // Mark all unread notifications as read
+    const unread = notifications.filter(n => !n.read);
+    if (unread.length > 0) {
+      unread.forEach(n => {
+        updateDoc(doc(db, 'notifications', n.id), { read: true }).catch(console.error);
+      });
+    }
   }, [notifications, currentUser]);
 
   const handleRead = (n: Notification) => {
@@ -2330,12 +2405,12 @@ const NotificationsScreen = () => {
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex-1 flex flex-col min-h-0 bg-white dark:bg-black">
-      <header className="px-5 py-4 border-b border-zinc-200 dark:border-zinc-800 sticky top-0 bg-white/90 dark:bg-black/90 backdrop-blur-md z-40 shrink-0">
+      <header className="px-5 py-4 border-b border-zinc-200 dark:border-zinc-800 sticky top-0 bg-white/90 dark:bg-white dark:bg-transparent/90 backdrop-blur-md z-40 shrink-0">
         <span className="font-bold text-xl text-zinc-900 dark:text-zinc-100">Notifications</span>
       </header>
       <div className="flex-1 overflow-y-auto pb-6">
         {notifications.length === 0 ? (
-          <div className="flex flex-col items-center justify-center p-10 h-full text-center text-zinc-500">
+          <div className="flex flex-col items-center justify-center p-10 h-full text-center text-zinc-500 dark:text-zinc-500 dark:text-zinc-500">
             <Heart size={48} className="mb-4 opacity-50" />
             <p>No notifications yet.</p>
           </div>
@@ -2350,7 +2425,7 @@ const NotificationsScreen = () => {
                 <div 
                   key={n.id} 
                   onClick={() => handleRead(n)}
-                  className={cn("flex items-center gap-4 px-5 py-4 cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-900/50 transition-colors", !n.read && "bg-indigo-50/50 dark:bg-indigo-900/10")}
+                  className={cn("flex items-center gap-4 px-5 py-4 cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-100 dark:bg-zinc-100 dark:bg-zinc-900/50 transition-colors", !n.read && "bg-indigo-50/50 dark:bg-indigo-900/10")}
                 >
                   {isSystem ? (
                     <div className="w-10 h-10 rounded-full bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-500 shrink-0">
@@ -2361,13 +2436,13 @@ const NotificationsScreen = () => {
                   )}
                   <div className="flex-1 text-[14px]">
                     <span className="font-semibold text-zinc-900 dark:text-zinc-100 mr-1">{actor.name}</span>
-                    <span className="text-zinc-600 dark:text-zinc-400">
+                    <span className="text-zinc-600 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-400">
                       {n.type === 'like' && 'liked your post.'}
                       {n.type === 'comment' && 'commented on your post.'}
                       {n.type === 'follow' && 'started following you.'}
                       {n.type === 'system' && n.message}
                     </span>
-                    <div className="text-[12px] text-zinc-500 mt-0.5">
+                    <div className="text-[12px] text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 mt-0.5">
                       {formatDistanceToNow(n.createdAt, { addSuffix: true })}
                     </div>
                   </div>
@@ -2448,7 +2523,7 @@ const CreateGroupChatScreen = () => {
     <motion.div initial={{ x: 50, opacity: 0 }} animate={{ x: 0, opacity: 1 }} className="flex-1 flex flex-col min-h-0 bg-white dark:bg-black absolute inset-0 z-50">
       <header className="flex items-center justify-between px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black/90 backdrop-blur-md sticky top-0 z-10 shrink-0">
         <div className="flex items-center gap-2">
-          <button onClick={() => navigate(-1)} className="p-1.5 rounded-full text-zinc-500 hover:text-black dark:text-white transition-colors"><ChevronLeft size={24} /></button>
+          <button onClick={() => navigate(-1)} className="p-1.5 rounded-full text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 hover:text-black dark:text-white transition-colors"><ChevronLeft size={24} /></button>
           <span className="font-bold text-zinc-900 dark:text-zinc-100">New Group</span>
         </div>
         <button 
@@ -2503,23 +2578,23 @@ const CreateGroupChatScreen = () => {
         )}
 
         {users.length === 0 && queryText.length > 0 && (
-           <p className="text-zinc-500 text-center p-6 text-[14px]">No accounts found.</p>
+           <p className="text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 text-center p-6 text-[14px]">No accounts found.</p>
         )}
 
         <div className="flex flex-col p-2">
           {users.map(u => {
             const isSelected = selectedUsers.some(user => user.id === u.id);
             return (
-              <div key={u.id} className="flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-colors active:bg-zinc-100 dark:active:bg-zinc-900" onClick={() => toggleUser(u)}>
+              <div key={u.id} className="flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-colors active:bg-zinc-100 dark:active:bg-zinc-100 dark:bg-zinc-100 dark:bg-zinc-900" onClick={() => toggleUser(u)}>
                 <img src={u.avatar || undefined} className="w-12 h-12 rounded-full object-cover bg-zinc-200 dark:bg-zinc-800 shrink-0" />
                 <div className="flex-1 min-w-0 flex flex-col justify-center">
                   <p className="font-bold text-[14px] text-zinc-900 dark:text-zinc-100 flex items-center shrink-0">
                     <span className="truncate">{u.name}</span>
                     <VerifiedBadge isVerified={u.isVerified} />
                   </p>
-                  <p className="text-[14px] text-zinc-500 truncate">{u.username}</p>
+                  <p className="text-[14px] text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 truncate">{u.username}</p>
                 </div>
-                <div className={cn("w-6 h-6 rounded-full border flex items-center justify-center shrink-0", isSelected ? "bg-indigo-500 border-indigo-500 text-white" : "border-zinc-300 dark:border-zinc-700")}>
+                <div className={cn("w-6 h-6 rounded-full border flex items-center justify-center shrink-0", isSelected ? "bg-indigo-500 border-indigo-500 text-black dark:text-white" : "border-zinc-300 dark:border-zinc-700")}>
                   {isSelected && <Check size={16} strokeWidth={3} />}
                 </div>
               </div>
@@ -2557,10 +2632,10 @@ const ChatListScreen = () => {
       <header className="px-5 py-5 border-b border-zinc-200 dark:border-zinc-800 sticky top-0 bg-white dark:bg-black/90 backdrop-blur-md z-40 shrink-0 flex items-center justify-between">
         <div className="text-xl font-bold text-zinc-900 dark:text-zinc-100 tracking-tight">Messages</div>
         <div className="flex gap-2 items-center">
-          <button onClick={() => navigate('/search')} className="p-2 text-zinc-900 dark:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition-colors" title="New Chat">
+          <button onClick={() => navigate('/search')} className="p-2 text-zinc-900 dark:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-200 dark:bg-zinc-200 dark:bg-zinc-800 rounded-full transition-colors" title="New Chat">
             <Search size={24} />
           </button>
-          <button onClick={() => navigate('/chat/group/create')} className="p-2 -mr-2 text-zinc-900 dark:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition-colors" title="New Group">
+          <button onClick={() => navigate('/chat/group/create')} className="p-2 -mr-2 text-zinc-900 dark:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-200 dark:bg-zinc-200 dark:bg-zinc-800 rounded-full transition-colors" title="New Group">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
           </button>
         </div>
@@ -2591,9 +2666,9 @@ const ChatListScreen = () => {
               <div className="flex-1 min-w-0 flex flex-col justify-center">
                 <div className="flex justify-between items-baseline mb-1">
                   <p className="font-bold text-[15px] text-zinc-900 dark:text-zinc-100">{name}</p>
-                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400 font-medium whitespace-nowrap ml-2">{formatDistanceToNow(chat.updatedAt)}</p>
+                  <p className="text-[11px] text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 font-medium whitespace-nowrap ml-2">{formatDistanceToNow(chat.updatedAt)}</p>
                 </div>
-                <div className={cn("text-[14px] truncate pr-4", currentUser && chat.seenBy && !chat.seenBy.includes(currentUser.id) && chat.lastMessage ? "text-zinc-900 dark:text-zinc-100 font-bold" : "text-zinc-600 dark:text-zinc-400")}>
+                <div className={cn("text-[14px] truncate pr-4", currentUser && chat.seenBy && !chat.seenBy.includes(currentUser.id) && chat.lastMessage ? "text-zinc-900 dark:text-zinc-100 font-bold" : "text-zinc-600 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-400")}>
                   {chat.lastMessage || 'Start a conversation'}
                 </div>
               </div>
@@ -2606,11 +2681,11 @@ const ChatListScreen = () => {
         {chats.length === 0 && (
           <div className="flex flex-col items-center justify-center p-10 h-full text-center">
             <div className="w-20 h-20 bg-zinc-100 dark:bg-zinc-900 rounded-full flex items-center justify-center mb-6">
-               <svg className="w-10 h-10 text-zinc-400 dark:text-zinc-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+               <svg className="w-10 h-10 text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 dark:text-zinc-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
             </div>
             <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 mb-2">Your Messages</h3>
-            <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-6 max-w-[240px]">Connect with friends or groups, direct messages will appear here.</p>
-            <button onClick={() => navigate('/search')} className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2.5 px-6 rounded-full text-[14px] transition-colors">Start a Chat</button>
+            <p className="text-sm text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 mb-6 max-w-[240px]">Connect with friends or groups, direct messages will appear here.</p>
+            <button onClick={() => navigate('/search')} className="bg-indigo-600 hover:bg-indigo-500 text-black dark:text-white font-bold py-2.5 px-6 rounded-full text-[14px] transition-colors">Start a Chat</button>
           </div>
         )}
       </div>
@@ -2636,7 +2711,7 @@ const HighlightedText = ({ text, highlight }: { text: string, highlight: string 
 };
 
 const ChatRoomScreen = () => {
-  const { chats, sendMessage, deleteMessage, currentUser } = useApp();
+  const { chats, sendMessage, deleteMessage, currentUser, removeGroupMember, deleteChat } = useApp();
   const navigate = useNavigate();
   const location = useLocation();
   const chatId = location.pathname.split('/').pop() || '';
@@ -2650,6 +2725,7 @@ const ChatRoomScreen = () => {
     const [searchQuery, setSearchQuery] = useState('');
     const [isSearching, setIsSearching] = useState(false);
     const [showGroupInfo, setShowGroupInfo] = useState(false);
+    const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   
     useEffect(() => {
       if (!chat || !currentUser) return;
@@ -2691,13 +2767,14 @@ const ChatRoomScreen = () => {
     return () => unsub();
   }, [chatId, chat]);
 
-  if (!chat) return <div className="p-5 flex justify-center items-center h-full text-zinc-500 dark:text-zinc-500">Wait...</div>;
+  if (!chat) return <div className="p-5 flex justify-center items-center h-full text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500">Wait...</div>;
 
   const isGroup = chat.isGroup;
   let headerName = 'Unknown';
   let headerSubtitle = '';
   let headerAvatar = '';
   let headerLink = '#';
+  let isUserOnline = false;
 
   if (isGroup) {
     headerName = chat.groupName || 'Group Chat';
@@ -2708,8 +2785,10 @@ const ChatRoomScreen = () => {
     const otherUserId = chat.users.find(u => u !== currentUser?.id);
     const user = otherUserId ? chatUsers[otherUserId] : null;
     if (user) {
-      headerName = user.name;
-      headerSubtitle = `@${user.username}`;
+      const nickname = chat.nicknames?.[user.id] || null;
+      headerName = nickname || user.name;
+      isUserOnline = checkIsOnline(user.lastActive);
+      headerSubtitle = isUserOnline ? 'Active now' : `@${user.username}`;
       headerAvatar = user.avatar || '';
       headerLink = `/${user.username}`;
     }
@@ -2726,7 +2805,7 @@ const ChatRoomScreen = () => {
   return (
     <motion.div initial={{ x: 50, opacity: 0 }} animate={{ x: 0, opacity: 1 }} className="flex-1 flex flex-col min-h-0 bg-white dark:bg-black absolute inset-0 z-50">
       <header className="flex items-center px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black/90 backdrop-blur-md sticky top-0 z-10 shrink-0">
-        <button onClick={() => navigate(-1)} className="mr-3 p-1.5 rounded-full text-zinc-500 dark:text-zinc-400 hover:text-black dark:text-white hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors"><ChevronLeft size={24} /></button>
+        <button onClick={() => navigate(-1)} className="mr-3 p-1.5 rounded-full text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 hover:text-black dark:text-white hover:bg-zinc-100 dark:hover:bg-zinc-100 dark:bg-zinc-100 dark:bg-zinc-900 transition-colors"><ChevronLeft size={24} /></button>
         {isGroup ? (
           <button onClick={() => setShowGroupInfo(true)} className="flex items-center gap-3 flex-1 group min-w-0 text-left">
             <div className="relative shrink-0">
@@ -2734,18 +2813,20 @@ const ChatRoomScreen = () => {
             </div>
             <div className="min-w-0">
               <p className="font-bold text-[15px] text-zinc-900 dark:text-zinc-100 leading-tight mb-0.5 truncate">{headerName}</p>
-              <p className="text-[12px] font-medium text-zinc-500 dark:text-zinc-400 truncate">{headerSubtitle}</p>
+              <p className="text-[12px] font-medium text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 truncate">{headerSubtitle}</p>
             </div>
           </button>
         ) : (
           <Link to={headerLink} className="flex items-center gap-3 flex-1 group min-w-0">
             <div className="relative shrink-0">
                <img src={headerAvatar || undefined} alt="" className="w-10 h-10 rounded-full bg-zinc-200 dark:bg-zinc-800 object-cover" />
-               <div className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-white dark:border-black rounded-full" />
+               {isUserOnline && (
+                 <div className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-white dark:border-black rounded-full" />
+               )}
             </div>
             <div className="min-w-0">
               <p className="font-bold text-[15px] text-zinc-900 dark:text-zinc-100 leading-tight mb-0.5 truncate">{headerName}</p>
-              <p className="text-[12px] font-medium text-zinc-500 dark:text-zinc-400 truncate">{headerSubtitle}</p>
+              <p className={cn("text-[12px] font-medium truncate", isUserOnline ? "text-emerald-500" : "text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-400")}>{headerSubtitle}</p>
             </div>
           </Link>
         )}
@@ -2754,16 +2835,22 @@ const ChatRoomScreen = () => {
             setIsSearching(!isSearching);
             if (isSearching) setSearchQuery('');
           }} 
-          className={cn("p-2 rounded-full transition-colors", isSearching ? "text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30" : "text-zinc-500 hover:text-black dark:text-zinc-400 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-900")}
+          className={cn("p-2 rounded-full transition-colors", isSearching ? "text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30" : "text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 hover:text-black dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 dark:hover:text-black dark:text-white hover:bg-zinc-100 dark:hover:bg-zinc-100 dark:bg-zinc-100 dark:bg-zinc-900")}
         >
           <Search size={20} />
+        </button>
+        <button 
+          onClick={() => setIsSettingsOpen(true)}
+          className="p-2 rounded-full transition-colors text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 hover:text-black dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 dark:hover:text-black dark:text-white hover:bg-zinc-100 dark:hover:bg-zinc-100 dark:bg-zinc-100 dark:bg-zinc-900 ml-1"
+        >
+          <Settings size={20} />
         </button>
       </header>
 
       {isSearching && (
         <div className="px-4 py-2 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 sticky top-[65px] z-10 shrink-0">
           <div className="relative">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-400" />
             <input 
               type="text" 
               placeholder="Search in conversation..." 
@@ -2775,7 +2862,7 @@ const ChatRoomScreen = () => {
             {searchQuery && (
               <button 
                 onClick={() => setSearchQuery('')}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-800 dark:text-zinc-800 dark:text-zinc-200"
               >
                 <X size={14} />
               </button>
@@ -2784,7 +2871,7 @@ const ChatRoomScreen = () => {
         </div>
       )}
       
-      <div className="flex-1 overflow-y-auto px-4 pt-6 pb-6 flex flex-col">
+      <div className="flex-1 overflow-y-auto px-4 pt-6 pb-6 flex flex-col" style={chat.theme ? { backgroundColor: chat.theme } : {}}>
         {chatMessages.filter(msg => !searchQuery || msg.text.toLowerCase().includes(searchQuery.toLowerCase())).map((msg, index, filteredArray) => {
           const isMe = msg.senderId === currentUser?.id;
           const prevMsg = filteredArray[index - 1];
@@ -2796,12 +2883,13 @@ const ChatRoomScreen = () => {
           const showDateHeader = !prevMsg || !isSameDay(msg.createdAt, prevMsg.createdAt);
           const sender = isMe ? currentUser : chatUsers[msg.senderId];
           const needsAvatarSpace = !isMe && !isSameSenderAsNext;
+          const senderName = sender ? (chat.nicknames?.[sender.id] || sender.name) : 'Unknown';
 
           return (
             <React.Fragment key={msg.id}>
               {showDateHeader && (
                 <div className="flex justify-center my-6">
-                  <span className="text-[11px] font-bold text-zinc-500 dark:text-zinc-500 uppercase tracking-widest bg-zinc-100 dark:bg-zinc-900 px-3 py-1 rounded-full">
+                  <span className="text-[11px] font-bold text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 uppercase tracking-widest bg-zinc-100 dark:bg-zinc-900 px-3 py-1 rounded-full">
                     {format(msg.createdAt, 'MMM d, yyyy')}
                   </span>
                 </div>
@@ -2818,19 +2906,19 @@ const ChatRoomScreen = () => {
                 )}
                 <div className={cn("flex flex-col group max-w-[75%]", isMe ? "items-end" : "items-start")}>
                   {isGroup && !isMe && !isSameSenderAsPrev && sender && (
-                    <span className="text-[11px] text-zinc-500 ml-1 mb-1">{sender.name}</span>
+                    <span className="text-[11px] text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 ml-1 mb-1">{senderName}</span>
                   )}
                   <div className={cn(
                     "px-4 py-2.5 text-[15px] leading-relaxed relative flex items-center", 
                     (msg.imageUrl || msg.videoUrl) ? "p-1 rounded-2xl overflow-hidden bg-transparent border-0" :
-                    (isMe ? "bg-indigo-600 text-white shadow-sm" : "bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-sm"),
+                    (isMe ? "bg-indigo-600 text-black dark:text-white shadow-sm" : "bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-sm"),
                     // Border radiuses for grouping
                     !(msg.imageUrl || msg.videoUrl) && "rounded-2xl",
                     !(msg.imageUrl || msg.videoUrl) && isMe && isSameSenderAsNext && "rounded-br-md",
                     !(msg.imageUrl || msg.videoUrl) && isMe && isSameSenderAsPrev && "rounded-tr-md",
                     !(msg.imageUrl || msg.videoUrl) && !isMe && isSameSenderAsNext && "rounded-bl-md",
                     !(msg.imageUrl || msg.videoUrl) && !isMe && isSameSenderAsPrev && "rounded-tl-md",
-                    msg.isDeleted && "opacity-60 italic bg-zinc-100 border-none text-zinc-500"
+                    msg.isDeleted && "opacity-60 italic bg-zinc-100 border-none text-zinc-500 dark:text-zinc-500 dark:text-zinc-500"
                   )}>
                     {msg.videoUrl ? (
                       <video src={msg.videoUrl} controls className="rounded-xl w-full max-w-[240px] max-h-[300px] object-cover" />
@@ -2849,7 +2937,7 @@ const ChatRoomScreen = () => {
                           Delete
                         </button>
                     )}
-                    <span className="text-[10px] text-zinc-400 dark:text-zinc-500 font-medium px-1 mt-1">
+                    <span className="text-[10px] text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 dark:text-zinc-500 dark:text-zinc-500 font-medium px-1 mt-1">
                       {format(msg.createdAt, 'h:mm a')}
                     </span>
                   </div>
@@ -2869,9 +2957,9 @@ const ChatRoomScreen = () => {
               value={text}
               onChange={e => setText(e.target.value)}
               placeholder="Message..."
-              className="bg-transparent flex-1 outline-none py-1 text-[15px] placeholder:text-zinc-500 dark:text-zinc-500 text-black dark:text-white"
+              className="bg-transparent flex-1 outline-none py-1 text-[15px] placeholder:text-black dark:text-white"
             />
-            <label className="p-1.5 rounded-full text-zinc-500 dark:text-zinc-400 hover:text-indigo-500 hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors cursor-pointer shrink-0">
+            <label className="p-1.5 rounded-full text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 hover:text-indigo-500 hover:bg-zinc-200 dark:hover:bg-zinc-200 dark:bg-zinc-200 dark:bg-zinc-800 transition-colors cursor-pointer shrink-0">
               <ImageIcon size={20} />
               <input type="file" className="hidden" accept="image/*,video/*" onChange={async (e) => {
                 const f = e.target.files?.[0];
@@ -2902,44 +2990,57 @@ const ChatRoomScreen = () => {
           <button 
             type="submit" 
             disabled={!text.trim()}
-            className="w-10 h-10 bg-indigo-600 hover:bg-indigo-500 disabled:bg-zinc-200 dark:disabled:bg-zinc-800 disabled:text-zinc-400 text-white rounded-full flex items-center justify-center transition-colors shrink-0"
+            className="w-10 h-10 bg-indigo-600 hover:bg-indigo-500 disabled:bg-zinc-200 dark:disabled:bg-zinc-200 dark:bg-zinc-200 dark:bg-zinc-800 disabled:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 text-black dark:text-white rounded-full flex items-center justify-center transition-colors shrink-0"
           >
             <Send size={18} className={cn(!text.trim() && "ml-0", text.trim() && "ml-1")} />
           </button>
         </div>
       </form>
 
-      {showGroupInfo && isGroup && (
+      {isSettingsOpen && (
          <div className="absolute inset-0 z-50 bg-white dark:bg-black flex flex-col">
            <header className="flex items-center px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black/90 backdrop-blur-md shrink-0">
-             <button onClick={() => setShowGroupInfo(false)} className="mr-3 p-1.5 rounded-full text-zinc-500 hover:text-black dark:text-white transition-colors"><ChevronLeft size={24} /></button>
-             <span className="font-bold text-[15px]">Group Info</span>
+             <button onClick={() => setIsSettingsOpen(false)} className="mr-3 p-1.5 rounded-full text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 hover:text-black dark:text-white transition-colors"><ChevronLeft size={24} /></button>
+             <span className="font-bold text-[15px]">{isGroup ? 'Group Info' : 'Chat Settings'}</span>
            </header>
            <div className="flex-1 overflow-y-auto p-5">
              <div className="flex flex-col items-center mb-8">
                 <div className="relative group">
                   <img src={headerAvatar || undefined} className="w-24 h-24 rounded-full bg-zinc-200 dark:bg-zinc-800 object-cover" />
-                  <label className="absolute inset-0 bg-black/50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
-                    <ImageIcon className="text-white" />
-                    <input type="file" className="hidden" accept="image/*" onChange={async (e) => {
-                      const f = e.target.files?.[0];
-                      if(f) {
-                        try {
-                          const url = await resizeImage(f, 400, 400);
-                          updateDoc(doc(db, 'chats', chatId), { groupAvatar: url });
-                        }catch(err){}
-                      }
-                    }} />
-                  </label>
+                  {isGroup && (
+                    <label className="absolute inset-0 bg-white dark:bg-transparent/50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
+                      <ImageIcon className="text-black dark:text-white" />
+                      <input type="file" className="hidden" accept="image/*" onChange={async (e) => {
+                        const f = e.target.files?.[0];
+                        if(f) {
+                          try {
+                            const url = await resizeImage(f, 400, 400);
+                            updateDoc(doc(db, 'chats', chatId), { groupAvatar: url });
+                          }catch(err){}
+                        }
+                      }} />
+                    </label>
+                  )}
                 </div>
                 <h2 className="text-xl font-bold mt-4">{headerName}</h2>
-                <p className="text-zinc-500">{chat.users.length} members</p>
+                <p className="text-zinc-500 dark:text-zinc-500 dark:text-zinc-500">{chat.users.length} members</p>
+             </div>
+
+             <div className="mb-6">
+               <h3 className="font-bold text-lg mb-4">Chat Theme</h3>
+               <div className="flex gap-3 items-center bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-3 rounded-xl">
+                 <input type="color" value={chat.theme || ''} onChange={(e) => updateDoc(doc(db, 'chats', chatId), { theme: e.target.value })} className="w-8 h-8 rounded shrink-0 bg-transparent p-0 border-0" />
+                 <span className="text-[14px]">Background Color Overlay</span>
+                 {(chat.theme) && (
+                    <button onClick={() => updateDoc(doc(db, 'chats', chatId), { theme: null })} className="ml-auto text-xs text-red-500 font-bold">Clear</button>
+                 )}
+               </div>
              </div>
 
              <div className="mb-6">
                <div className="flex items-center justify-between mb-4">
                  <h3 className="font-bold text-lg">Members</h3>
-                 {(!chat.onlyAdminsCanAddMembers || chat.admins?.includes(currentUser?.id || '')) && (
+                 {isGroup && (!chat.onlyAdminsCanAddMembers || chat.admins?.includes(currentUser?.id || '')) && (
                    <button onClick={() => {
                      const username = window.prompt("Enter exact username to add:");
                      if (username && username.trim()) {
@@ -2960,12 +3061,12 @@ const ChatRoomScreen = () => {
                  )}
                </div>
                
-               {chat.admins?.includes(currentUser?.id || '') && (
+               {isGroup && chat.admins?.includes(currentUser?.id || '') && (
                  <div className="flex items-center justify-between p-3 bg-zinc-50 dark:bg-zinc-900 rounded-xl mb-4">
                    <span className="font-medium text-sm">Only Admins can add members</span>
                    <button 
                      onClick={() => updateDoc(doc(db, 'chats', chatId), { onlyAdminsCanAddMembers: !chat.onlyAdminsCanAddMembers })} 
-                     className="w-10 h-5 bg-zinc-300 dark:bg-zinc-700 rounded-full relative transition-colors shadow-inner"
+                     className="w-10 h-5 bg-zinc-300 dark:bg-zinc-300 dark:bg-zinc-300 dark:bg-zinc-700 rounded-full relative transition-colors shadow-inner"
                      style={{ backgroundColor: chat.onlyAdminsCanAddMembers ? '#6366f1' : undefined }}
                    >
                      <div className={cn("absolute top-0.5 left-0.5 bg-white w-4 h-4 rounded-full transition-transform shadow-sm", chat.onlyAdminsCanAddMembers && "translate-x-5")} />
@@ -2977,11 +3078,35 @@ const ChatRoomScreen = () => {
                  {chat.users.map(uid => {
                    const u = uid === currentUser?.id ? currentUser : chatUsers[uid];
                    if (!u) return null;
+                   const nickname = chat.nicknames?.[uid] || '';
                    return (
                      <div key={uid} className="flex items-center gap-3">
                        <img src={u.avatar || undefined} className="w-10 h-10 rounded-full object-cover bg-zinc-200 dark:bg-zinc-800" />
-                       <span className="font-bold">{u.name} <span className="text-zinc-500 font-normal ml-1">@{u.username}</span></span>
-                       {chat.admins?.includes(u.id) && <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded ml-auto">Admin</span>}
+                       <div className="flex flex-col">
+                         <span className="font-bold">{u.name} <span className="text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 font-normal ml-1">@{u.username}</span></span>
+                         {nickname && <span className="text-xs text-indigo-500 font-medium">Nickname: {nickname}</span>}
+                       </div>
+                       
+                       <div className="ml-auto flex items-center gap-2">
+                         <button onClick={() => {
+                           const newNick = window.prompt(`Set nickname for ${u.name}:`, nickname);
+                           if (newNick !== null) {
+                             updateDoc(doc(db, 'chats', chatId), {
+                               [`nicknames.${uid}`]: newNick.trim() || null
+                             });
+                           }
+                         }} className="text-[11px] text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 font-bold bg-zinc-100 dark:bg-zinc-900 px-2 py-1 rounded">Edit Nickname</button>
+                         
+                         {isGroup && chat.admins?.includes(u.id) && <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded">Admin</span>}
+                         
+                         {isGroup && chat.admins?.includes(currentUser?.id || '') && uid !== currentUser?.id && (
+                           <button onClick={() => {
+                             if(confirm(`Remove ${u.name} from group?`)) {
+                               removeGroupMember(chatId, u.id);
+                             }
+                           }} className="text-[11px] text-red-500 font-bold bg-red-50 dark:bg-red-900/20 px-2 py-1 rounded">Remove</button>
+                         )}
+                       </div>
                      </div>
                    )
                  })}
@@ -3001,9 +3126,18 @@ const ChatRoomScreen = () => {
                    </div>
                  ))}
                  {chatMessages.filter(m => m.imageUrl || m.videoUrl).length === 0 && (
-                   <p className="text-sm text-zinc-500 col-span-3">No media shared yet.</p>
+                   <p className="text-sm text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 col-span-3">No media shared yet.</p>
                  )}
                </div>
+             </div>
+
+             <div className="mt-10 border-t border-zinc-200 dark:border-zinc-800 pt-6 flex justify-center pb-10">
+               <button onClick={async () => {
+                 if (confirm("Are you sure you want to delete this chat forever?")) {
+                   await deleteChat(chatId);
+                   navigate('/chat');
+                 }
+               }} className="text-red-500 font-bold bg-red-50 dark:bg-red-900/20 px-6 py-2 rounded-xl text-sm transition-colors hover:bg-red-100 dark:hover:bg-red-900/40">Delete Chat</button>
              </div>
            </div>
          </div>
@@ -3017,10 +3151,9 @@ const SearchScreen = () => {
   const [queryText, setQueryText] = useState(searchParams.get('q') || '');
   const [users, setUsers] = useState<User[]>([]);
   const { currentUser, posts } = useApp();
-  const [tab, setTab] = useState<'users'|'posts'>(searchParams.get('q') ? 'posts' : 'users');
 
   useEffect(() => {
-    if (!queryText.trim() || tab !== 'users') {
+    if (!queryText.trim()) {
       setUsers([]);
       return;
     }
@@ -3039,9 +3172,9 @@ const SearchScreen = () => {
       setUsers(u);
     }, error => console.error("Users search error:", error.message));
     return () => unsub();
-  }, [queryText, currentUser, tab]);
+  }, [queryText, currentUser]);
 
-  const matchedPosts = tab === 'posts' && queryText.trim() 
+  const matchedPosts = queryText.trim() 
     ? posts.filter(p => p.caption?.toLowerCase().includes(queryText.toLowerCase()))
     : [];
 
@@ -3053,42 +3186,52 @@ const SearchScreen = () => {
       <div className="flex-1 overflow-y-auto w-full">
         <div className="p-5 pb-2 sticky top-0 bg-white dark:bg-black z-10 w-full shrink-0">
           <div className="w-full bg-zinc-100 dark:bg-zinc-900/50 rounded-xl px-4 py-3 flex items-center gap-3 border border-zinc-200 dark:border-zinc-800">
-            <Search size={20} className="text-zinc-500 dark:text-zinc-500 shrink-0" />
+            <Search size={20} className="text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 shrink-0" />
             <input 
               type="text" 
-              placeholder={`Search ${tab}...`} 
+              placeholder={`Search...`} 
               value={queryText}
               onChange={e => setQueryText(e.target.value)}
               className="bg-transparent border-none outline-none text-black dark:text-white w-full placeholder:text-zinc-600 min-w-0"
             />
           </div>
-          <div className="flex gap-4 mt-4 px-1 border-b border-zinc-200 dark:border-zinc-800/50 w-full overflow-x-auto hide-scrollbar shrink-0">
-            <button onClick={() => setTab('users')} className={cn("pb-2 px-1 text-[13px] font-bold tracking-wide uppercase transition-colors shrink-0", tab === 'users' ? "border-b-2 border-indigo-500 text-indigo-500" : "text-zinc-500")}>Users</button>
-            <button onClick={() => setTab('posts')} className={cn("pb-2 px-1 text-[13px] font-bold tracking-wide uppercase transition-colors shrink-0", tab === 'posts' ? "border-b-2 border-indigo-500 text-indigo-500" : "text-zinc-500")}>Posts</button>
-          </div>
         </div>
-        <div className="flex flex-col w-full min-w-0">
-          {tab === 'users' ? (
-            <div className="flex flex-col gap-4 p-5">
-              {users.map(u => (
-                <Link key={u.id} to={`/${u.username}`} className="flex items-center gap-4 bg-zinc-100 dark:bg-zinc-900/30 p-3 rounded-2xl hover:bg-zinc-100 dark:bg-zinc-900/50 transition-colors w-full break-inside-avoid shrink-0">
-                   <img src={u.avatar || undefined} alt="" className="w-12 h-12 rounded-full object-cover bg-zinc-200 dark:bg-zinc-800 shrink-0" />
-                   <div className="min-w-0 flex-1">
-                      <div className="font-bold text-black dark:text-white text-[14px] truncate">{u.username}</div>
-                      <div className="text-zinc-500 dark:text-zinc-500 text-[12px] truncate">{u.name}</div>
-                   </div>
-                </Link>
-              ))}
-              {queryText.trim() && users.length === 0 && (
-                 <div className="text-center text-zinc-500 dark:text-zinc-500 mt-10">No users found</div>
-              )}
+        <div className="flex flex-col w-full min-w-0 p-5 pt-2">
+          {queryText.trim() && users.length === 0 && matchedPosts.length === 0 && (
+            <div className="text-center text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 mt-10">No results found</div>
+          )}
+          
+          {users.length > 0 && (
+            <div className="mb-6">
+              <h2 className="text-[13px] font-bold tracking-wide uppercase text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 mb-3 px-1">Accounts</h2>
+              <div className="flex gap-4 overflow-x-auto hide-scrollbar pb-2">
+                {users.map(u => (
+                  <Link key={u.id} to={`/${u.username}`} className="flex flex-col items-center gap-2 min-w-[80px] shrink-0">
+                    <img src={u.avatar || undefined} alt="" className="w-16 h-16 rounded-full object-cover bg-zinc-200 dark:bg-zinc-800 border-2 border-transparent hover:border-black dark:hover:border-white transition-colors" />
+                    <div className="font-bold text-black dark:text-white text-[12px] truncate w-full text-center">{u.username}</div>
+                  </Link>
+                ))}
+              </div>
             </div>
-          ) : (
-            <div className="flex flex-col w-full min-w-0 pb-6 shrink-0 divide-y divide-zinc-200 dark:divide-zinc-800">
-               {matchedPosts.map(post => <PostItem key={post.id} post={post} />)}
-               {queryText.trim() && matchedPosts.length === 0 && (
-                 <div className="text-center text-zinc-500 dark:text-zinc-500 mt-10">No posts found</div>
-               )}
+          )}
+
+          {matchedPosts.length > 0 && (
+            <div>
+              <h2 className="text-[13px] font-bold tracking-wide uppercase text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 mb-3 px-1">Posts</h2>
+              <div className="grid grid-cols-3 gap-1">
+                {matchedPosts.map(post => (
+                  <Link key={post.id} to={`/post/${post.id}`} className="aspect-square bg-zinc-100 dark:bg-zinc-900 relative block group">
+                     {post.imageUrl ? (
+                       <img src={post.imageUrl} alt="" className="w-full h-full object-cover" />
+                     ) : (
+                       <div className="w-full h-full flex items-center justify-center p-2 text-center text-[10px] break-words">
+                         <span className="line-clamp-3">{post.caption}</span>
+                       </div>
+                     )}
+                     <div className="absolute inset-0 bg-white dark:bg-transparent/0 group-hover:bg-white dark:bg-black/20 transition-colors" />
+                  </Link>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -3148,7 +3291,7 @@ const CreatePostScreen = () => {
   return (
     <motion.div initial={{ y: 50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="flex-1 flex flex-col min-h-0 bg-white dark:bg-black">
       <header className="flex items-center justify-between px-5 py-4 border-b border-zinc-200 dark:border-zinc-800 shrink-0 bg-white dark:bg-black/90 backdrop-blur-md sticky top-0 z-10">
-        <button onClick={() => navigate(-1)} className="text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 hover:text-black dark:text-white transition-colors"><ChevronLeft size={24} /></button>
+        <button onClick={() => navigate(-1)} className="text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 hover:text-black dark:text-white transition-colors"><ChevronLeft size={24} /></button>
         <span className="font-bold text-lg text-zinc-900 dark:text-zinc-100">New Post</span>
         <button onClick={handleCreate} className={cn("font-bold text-[13px] uppercase tracking-wider text-indigo-400 transition-opacity", !canSubmit ? "opacity-30" : "hover:text-indigo-300")} disabled={!canSubmit}>Share</button>
       </header>
@@ -3161,7 +3304,7 @@ const CreatePostScreen = () => {
               value={caption}
               onChange={e => setCaption(e.target.value)}
               placeholder="Write a caption... (optional if you add an image)"
-              className={cn("bg-transparent flex-1 resize-none outline-none text-[15px] min-h-[100px] border-none text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-500 font-medium pt-2", isItalic && !imageUrl && "italic")}
+              className={cn("bg-transparent flex-1 resize-none outline-none text-[15px] min-h-[100px] border-none text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 font-medium pt-2", isItalic && !imageUrl && "italic")}
               autoFocus
             />
           </div>
@@ -3169,7 +3312,7 @@ const CreatePostScreen = () => {
             <div className="flex w-full justify-end px-2">
               <button
                 onClick={() => setIsItalic(!isItalic)}
-                className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-colors border", isItalic ? "bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800" : "bg-zinc-100 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-800")}
+                className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-colors border", isItalic ? "bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800" : "bg-zinc-100 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-200 dark:bg-zinc-200 dark:bg-zinc-800")}
               >
                 <Type size={14} className={isItalic ? "italic" : ""} />
                 Italic
@@ -3180,7 +3323,7 @@ const CreatePostScreen = () => {
 
         {!imageUrl ? (
           <div className="flex-1 flex items-start justify-center">
-            <label className="flex flex-col w-full aspect-video bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors rounded-2xl items-center justify-center gap-4 cursor-pointer border-dashed border-2">
+            <label className="flex flex-col w-full aspect-video bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-200 dark:bg-zinc-200 dark:bg-zinc-800 transition-colors rounded-2xl items-center justify-center gap-4 cursor-pointer border-dashed border-2">
               <input 
                 type="file"
                 accept="image/*"
@@ -3189,11 +3332,11 @@ const CreatePostScreen = () => {
                 disabled={isUploading}
               />
               {isUploading ? (
-                 <span className="text-zinc-500 dark:text-zinc-500 font-bold uppercase tracking-widest text-[14px] animate-pulse">Processing...</span>
+                 <span className="text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 font-bold uppercase tracking-widest text-[14px] animate-pulse">Processing...</span>
               ) : (
                  <>
-                   <ImageIcon size={32} className="text-zinc-400 dark:text-zinc-600"/>
-                   <span className="text-zinc-600 dark:text-zinc-400 font-medium tracking-tight text-[14px]">Attach Photo (Optional)</span>
+                   <ImageIcon size={32} className="text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 dark:text-zinc-600"/>
+                   <span className="text-zinc-600 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 font-medium tracking-tight text-[14px]">Attach Photo (Optional)</span>
                  </>
               )}
             </label>
@@ -3202,7 +3345,7 @@ const CreatePostScreen = () => {
           <div className="flex flex-col gap-4">
              <div className="w-full bg-zinc-100 dark:bg-zinc-900 relative rounded-2xl overflow-hidden shadow-sm border border-zinc-200 dark:border-zinc-800">
                <img src={imageUrl || undefined} alt="Preview" className="w-full h-auto object-cover max-h-[60vh] mx-auto" />
-               <label className="absolute bottom-4 right-4 bg-white dark:bg-black/70 backdrop-blur-md px-3 py-1.5 rounded-full text-black dark:text-white text-[12px] font-bold cursor-pointer hover:bg-white dark:hover:bg-black/90 transition-colors flex items-center gap-2 border border-zinc-200 dark:border-zinc-800 shadow-sm">
+               <label className="absolute bottom-4 right-4 bg-white dark:bg-black/70 backdrop-blur-md px-3 py-1.5 rounded-full text-black dark:text-white text-[12px] font-bold cursor-pointer hover:bg-white dark:hover:bg-white dark:bg-black/90 transition-colors flex items-center gap-2 border border-zinc-200 dark:border-zinc-800 shadow-sm">
                   <ImageIcon size={14} /> Change Photo
                   <input type="file" accept="image/*" className="hidden" onChange={handleUpload} disabled={isUploading} />
                </label>
@@ -3215,6 +3358,13 @@ const CreatePostScreen = () => {
       </div>
     </motion.div>
   );
+};
+
+// Helper to check online status (within 5 minutes)
+export const checkIsOnline = (lastActive: any): boolean => {
+  if (!lastActive) return false;
+  const t = typeof lastActive.toMillis === 'function' ? lastActive.toMillis() : (lastActive.getTime?.() || lastActive);
+  return (Date.now() - t) < 5 * 60 * 1000;
 };
 
 const UserProfileScreen = () => {
@@ -3379,14 +3529,14 @@ const UserProfileScreen = () => {
      }
   };
 
-  if (!user) return <div className="flex-1 bg-white dark:bg-black flex items-center justify-center text-zinc-500 dark:text-zinc-500">Loading...</div>;
+  if (!user) return <div className="flex-1 bg-white dark:bg-black flex items-center justify-center text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500">Loading...</div>;
 
   const userPosts = posts.filter(p => p.userId === userId);
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex-1 flex flex-col min-h-0 bg-white dark:bg-black">
       <header className="flex items-center justify-between px-5 py-5 border-b border-zinc-200 dark:border-zinc-800 sticky top-0 bg-white dark:bg-black/90 backdrop-blur-md z-40 shrink-0">
-        <button onClick={() => navigate(-1)} className="text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 hover:text-black dark:text-white transition-colors w-6 flex justify-start">
+        <button onClick={() => navigate(-1)} className="text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 hover:text-black dark:text-white transition-colors w-6 flex justify-start">
           <ChevronLeft size={24} />
         </button>
         <span className="font-bold text-[15px] tracking-wide text-zinc-900 dark:text-zinc-100">@{user.username} {user.bannedUntil && (user.bannedUntil?.toDate?.() || user.bannedUntil) > new Date() && <span className="text-rose-500 font-bold ml-1 uppercase text-xs">(Banned)</span>}</span>
@@ -3406,9 +3556,9 @@ const UserProfileScreen = () => {
              <div className="absolute inset-0 rounded-full ring-2 ring-indigo-500/30 ring-offset-4 ring-offset-white dark:ring-offset-black"></div>
           </div>
           <div className="flex gap-4 sm:gap-7 pr-2 text-center">
-            <div className="flex flex-col items-center"><span className="font-bold text-lg sm:text-xl">{userPosts.length}</span><span className="text-[10px] text-zinc-500 dark:text-zinc-500 uppercase tracking-widest mt-1">Posts</span></div>
-            <div className="flex flex-col items-center cursor-pointer hover:opacity-70" onClick={() => fetchModalUsers('followers')}><span className="font-bold text-lg sm:text-xl">{followerIds.length}</span><span className="text-[10px] text-zinc-500 dark:text-zinc-500 uppercase tracking-widest mt-1">Followers</span></div>
-            <div className="flex flex-col items-center cursor-pointer hover:opacity-70" onClick={() => fetchModalUsers('following')}><span className="font-bold text-lg sm:text-xl">{followingIds.length}</span><span className="text-[10px] text-zinc-500 dark:text-zinc-500 uppercase tracking-widest mt-1">Following</span></div>
+            <div className="flex flex-col items-center"><span className="font-bold text-lg sm:text-xl">{userPosts.length}</span><span className="text-[10px] text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 uppercase tracking-widest mt-1">Posts</span></div>
+            <div className="flex flex-col items-center cursor-pointer hover:opacity-70" onClick={() => fetchModalUsers('followers')}><span className="font-bold text-lg sm:text-xl">{followerIds.length}</span><span className="text-[10px] text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 uppercase tracking-widest mt-1">Followers</span></div>
+            <div className="flex flex-col items-center cursor-pointer hover:opacity-70" onClick={() => fetchModalUsers('following')}><span className="font-bold text-lg sm:text-xl">{followingIds.length}</span><span className="text-[10px] text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 uppercase tracking-widest mt-1">Following</span></div>
           </div>
         </div>
         
@@ -3432,17 +3582,17 @@ const UserProfileScreen = () => {
 
           {currentUser?.id !== userId && (
             <div className="mt-6 flex gap-3">
-              <button onClick={handleFollowToggle} disabled={loadingFollow} className={cn("flex-1 py-2.5 rounded-xl text-[12px] uppercase tracking-widest font-bold transition-all text-center", isFollowing ? 'bg-zinc-200 dark:bg-zinc-800 text-black dark:text-white hover:bg-zinc-300 dark:hover:bg-zinc-700' : 'bg-indigo-600 hover:bg-indigo-500 text-white')}>
+              <button onClick={handleFollowToggle} disabled={loadingFollow} className={cn("flex-1 py-2.5 rounded-xl text-[12px] uppercase tracking-widest font-bold transition-all text-center", isFollowing ? 'bg-zinc-200 dark:bg-zinc-800 text-black dark:text-white hover:bg-zinc-300 dark:hover:bg-zinc-300 dark:bg-zinc-300 dark:bg-zinc-700' : 'bg-indigo-600 hover:bg-indigo-500 text-black dark:text-white')}>
                  {isFollowing ? 'Following' : 'Follow'}
               </button>
-              <button onClick={handleMessage} className="flex-1 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-800 py-2.5 rounded-xl text-[12px] text-black dark:text-white uppercase tracking-widest font-bold transition-all text-center">Message</button>
+              <button onClick={handleMessage} className="flex-1 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-200 dark:bg-zinc-200 dark:bg-zinc-800 py-2.5 rounded-xl text-[12px] text-black dark:text-white uppercase tracking-widest font-bold transition-all text-center">Message</button>
             </div>
           )}
         </div>
 
         <div className="grid grid-cols-3 gap-0.5 sm:gap-1 p-0.5 sm:px-1 bg-white dark:bg-black">
           {userPosts.length === 0 ? (
-            <div className="col-span-3 py-16 flex flex-col items-center justify-center text-zinc-500 dark:text-zinc-500 bg-zinc-100 dark:bg-zinc-900/30 rounded-xl m-4 border border-zinc-200 dark:border-zinc-800/50 block">
+            <div className="col-span-3 py-16 flex flex-col items-center justify-center text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 bg-zinc-100 dark:bg-zinc-900/30 rounded-xl m-4 border border-zinc-200 dark:border-zinc-800/50 block">
               <ImageIcon size={48} className="mb-4 opacity-40" />
               <p className="text-[13px] font-medium">No posts compiled yet</p>
             </div>
@@ -3452,7 +3602,7 @@ const UserProfileScreen = () => {
                 {post.imageUrl ? (
                   <>
                     <img src={post.imageUrl || undefined} alt="" className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                    <div className="absolute inset-0 bg-white/0 dark:bg-black/0 group-hover:bg-white/20 dark:group-hover:bg-black/20 transition-colors" />
+                    <div className="absolute inset-0 bg-white/0 dark:bg-white dark:bg-transparent/0 group-hover:bg-white/20 dark:group-hover:bg-white dark:bg-black/20 transition-colors" />
                   </>
                 ) : (
                   <div className={cn("absolute inset-0 flex items-center justify-center p-2 text-center text-[10px] sm:text-xs font-medium overflow-hidden break-words", post.isItalic && "italic")}>{formatTextHighlight(post.caption)}</div>
@@ -3465,9 +3615,9 @@ const UserProfileScreen = () => {
       <FollowListModal isOpen={modalType !== null} onClose={() => setModalType(null)} title={modalType === 'followers' ? 'Followers' : 'Following'} users={modalUsers} />
       
       {showReportModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-zinc-950 w-full max-w-sm rounded-[24px] p-6 flex flex-col gap-5 border border-zinc-200 dark:border-zinc-800 shadow-2xl relative">
-            <button onClick={() => setShowReportModal(false)} className="absolute top-4 right-4 p-2 text-zinc-500 hover:text-black dark:text-zinc-400 dark:hover:text-white transition-colors bg-zinc-100 dark:bg-zinc-900 rounded-full">
+        <div className="fixed inset-0 bg-white dark:bg-transparent/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-zinc-50 dark:bg-zinc-50 dark:bg-zinc-950 w-full max-w-sm rounded-[24px] p-6 flex flex-col gap-5 border border-zinc-200 dark:border-zinc-800 shadow-2xl relative">
+            <button onClick={() => setShowReportModal(false)} className="absolute top-4 right-4 p-2 text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 hover:text-black dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 dark:hover:text-black dark:text-white transition-colors bg-zinc-100 dark:bg-zinc-900 rounded-full">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
             </button>
             <div className="flex items-center gap-3">
@@ -3476,7 +3626,7 @@ const UserProfileScreen = () => {
               </div>
               <div>
                 <h3 className="text-[17px] font-bold text-zinc-900 dark:text-zinc-100">Report User</h3>
-                <p className="text-zinc-500 text-[13px] font-medium leading-snug tracking-wide mt-0.5">Help us keep the community safe.</p>
+                <p className="text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 text-[13px] font-medium leading-snug tracking-wide mt-0.5">Help us keep the community safe.</p>
               </div>
             </div>
             
@@ -3484,10 +3634,10 @@ const UserProfileScreen = () => {
               value={reportReason} 
               onChange={e => setReportReason(e.target.value)} 
               placeholder="Please describe why you are reporting this user..."
-              className="mt-2 text-[14px] bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-3 outline-none min-h-[100px] resize-none text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400"
+              className="mt-2 text-[14px] bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-3 outline-none min-h-[100px] resize-none text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-400"
             />
             
-            <button onClick={handleReportUser} disabled={!reportReason.trim()} className="mt-2 bg-rose-500 hover:bg-rose-600 active:bg-rose-700 disabled:opacity-50 text-white font-bold text-[14px] py-3.5 rounded-xl transition-all shadow-md shadow-rose-500/20 w-full tracking-wide">
+            <button onClick={handleReportUser} disabled={!reportReason.trim()} className="mt-2 bg-rose-500 hover:bg-rose-600 active:bg-rose-700 disabled:opacity-50 text-black dark:text-white font-bold text-[14px] py-3.5 rounded-xl transition-all shadow-md shadow-rose-500/20 w-full tracking-wide">
               Submit Report
             </button>
           </div>
@@ -3545,12 +3695,12 @@ const ProfileScreen = () => {
       <header className="flex items-center justify-between px-5 py-5 border-b border-zinc-200 dark:border-zinc-800 sticky top-0 bg-white dark:bg-black/90 backdrop-blur-md z-40 shrink-0">
         <button 
           onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')} 
-          className="text-zinc-700 dark:text-zinc-300 hover:text-black dark:hover:text-white transition-colors w-6 flex justify-start"
+          className="text-zinc-700 dark:text-zinc-300 hover:text-black dark:hover:text-black dark:text-white transition-colors w-6 flex justify-start"
         >
           {theme === 'light' ? <Moon size={22} /> : <Sun size={22} />}
         </button>
         <span className="font-bold text-[15px] tracking-wide text-zinc-900 dark:text-zinc-100">@{currentUser.username}</span>
-        <button onClick={() => navigate('/settings')} className="text-zinc-500 hover:text-black dark:hover:text-white transition-colors w-6 flex justify-end">
+        <button onClick={() => navigate('/settings')} className="text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 hover:text-black dark:hover:text-black dark:text-white transition-colors w-6 flex justify-end">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         </button>
       </header>
@@ -3562,9 +3712,9 @@ const ProfileScreen = () => {
              <div className="absolute inset-0 rounded-full ring-2 ring-indigo-500/30 ring-offset-4 ring-offset-white dark:ring-offset-black"></div>
           </div>
           <div className="flex gap-4 sm:gap-7 pr-2 text-center">
-            <div className="flex flex-col items-center"><span className="font-bold text-lg sm:text-xl">{myPosts.length}</span><span className="text-[10px] text-zinc-500 dark:text-zinc-500 uppercase tracking-widest mt-1">Posts</span></div>
-            <div className="flex flex-col items-center cursor-pointer hover:opacity-70" onClick={() => fetchModalUsers('followers')}><span className="font-bold text-lg sm:text-xl">{followerIds.length}</span><span className="text-[10px] text-zinc-500 dark:text-zinc-500 uppercase tracking-widest mt-1">Followers</span></div>
-            <div className="flex flex-col items-center cursor-pointer hover:opacity-70" onClick={() => fetchModalUsers('following')}><span className="font-bold text-lg sm:text-xl">{followingIds.length}</span><span className="text-[10px] text-zinc-500 dark:text-zinc-500 uppercase tracking-widest mt-1">Following</span></div>
+            <div className="flex flex-col items-center"><span className="font-bold text-lg sm:text-xl">{myPosts.length}</span><span className="text-[10px] text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 uppercase tracking-widest mt-1">Posts</span></div>
+            <div className="flex flex-col items-center cursor-pointer hover:opacity-70" onClick={() => fetchModalUsers('followers')}><span className="font-bold text-lg sm:text-xl">{followerIds.length}</span><span className="text-[10px] text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 uppercase tracking-widest mt-1">Followers</span></div>
+            <div className="flex flex-col items-center cursor-pointer hover:opacity-70" onClick={() => fetchModalUsers('following')}><span className="font-bold text-lg sm:text-xl">{followingIds.length}</span><span className="text-[10px] text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 uppercase tracking-widest mt-1">Following</span></div>
           </div>
         </div>
         
@@ -3600,7 +3750,7 @@ const ProfileScreen = () => {
 
         <div className="grid grid-cols-3 gap-0.5 sm:gap-1 p-0.5 sm:px-1 bg-white dark:bg-black">
           {myPosts.length === 0 ? (
-            <div className="col-span-3 py-16 flex flex-col items-center justify-center text-zinc-500 dark:text-zinc-500 bg-zinc-100 dark:bg-zinc-900/30 rounded-xl m-4 border border-zinc-200 dark:border-zinc-800/50 block">
+            <div className="col-span-3 py-16 flex flex-col items-center justify-center text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 bg-zinc-100 dark:bg-zinc-900/30 rounded-xl m-4 border border-zinc-200 dark:border-zinc-800/50 block">
               <ImageIcon size={48} className="mb-4 opacity-40" />
               <p className="text-[13px] font-medium">No posts compiled yet</p>
             </div>
@@ -3610,7 +3760,7 @@ const ProfileScreen = () => {
                 {post.imageUrl ? (
                   <>
                     <img src={post.imageUrl || undefined} alt="" className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                    <div className="absolute inset-0 bg-white/0 dark:bg-black/0 group-hover:bg-white/20 dark:group-hover:bg-black/20 transition-colors" />
+                    <div className="absolute inset-0 bg-white/0 dark:bg-white dark:bg-transparent/0 group-hover:bg-white/20 dark:group-hover:bg-white dark:bg-black/20 transition-colors" />
                   </>
                 ) : (
                   <div className={cn("absolute inset-0 flex items-center justify-center p-2 text-center text-[10px] sm:text-xs font-medium overflow-hidden break-words", post.isItalic && "italic")}>{formatTextHighlight(post.caption)}</div>
@@ -3699,7 +3849,7 @@ const AuthScreen = () => {
   return (
     <div className="flex-1 flex flex-col items-center justify-center bg-white dark:bg-black p-6 h-full relative z-[200]">
       <h1 className="text-4xl font-bold italic text-black dark:text-white mb-2 font-sans tracking-tight">FineWord</h1>
-      <p className="text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 mb-8 text-center max-w-[260px] text-[14px] leading-relaxed">
+      <p className="text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 mb-8 text-center max-w-[260px] text-[14px] leading-relaxed">
         {isSignUp ? 'Create an account to start sharing moments.' : 'Sign in to connect with friends and share moments instantly.'}
       </p>
       
@@ -3730,16 +3880,16 @@ const AuthScreen = () => {
           <button 
             type="submit" 
             disabled={loading} 
-            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3.5 rounded-xl text-[14px] active:scale-95 transition-all shadow-md shadow-indigo-500/20 disabled:opacity-70 disabled:scale-100 mt-1"
+            className="w-full bg-indigo-600 hover:bg-indigo-500 text-black dark:text-white font-bold py-3.5 rounded-xl text-[14px] active:scale-95 transition-all shadow-md shadow-indigo-500/20 disabled:opacity-70 disabled:scale-100 mt-1"
           >
             {isSignUp ? 'Sign Up' : 'Sign In'}
           </button>
         </form>
 
         <div className="flex items-center gap-3 my-2 opacity-50">
-          <div className="h-px bg-zinc-300 dark:bg-zinc-700 flex-1"></div>
-          <span className="text-xs font-medium uppercase tracking-wider text-zinc-500">OR</span>
-          <div className="h-px bg-zinc-300 dark:bg-zinc-700 flex-1"></div>
+          <div className="h-px bg-zinc-300 dark:bg-zinc-300 dark:bg-zinc-300 dark:bg-zinc-700 flex-1"></div>
+          <span className="text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-500 dark:text-zinc-500">OR</span>
+          <div className="h-px bg-zinc-300 dark:bg-zinc-300 dark:bg-zinc-300 dark:bg-zinc-700 flex-1"></div>
         </div>
 
         <button onClick={() => handleGoogleLogin(false)} disabled={loading} className="w-full bg-white text-black font-bold py-3.5 rounded-xl text-[14px] flex items-center justify-center gap-3 active:scale-95 transition-transform hover:bg-zinc-100 border border-zinc-200 disabled:opacity-70 disabled:scale-100">
@@ -3755,7 +3905,7 @@ const AuthScreen = () => {
         <button 
           onClick={() => setIsSignUp(!isSignUp)} 
           disabled={loading} 
-          className="w-full bg-transparent text-zinc-500 font-medium py-2 rounded-xl text-[12px] hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors disabled:opacity-50 mt-2"
+          className="w-full bg-transparent text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 font-medium py-2 rounded-xl text-[12px] hover:text-zinc-700 dark:hover:text-zinc-700 dark:text-zinc-700 dark:text-zinc-300 transition-colors disabled:opacity-50 mt-2"
         >
           {isSignUp ? 'Already have an account? Sign In' : 'Need an account? Sign Up'}
         </button>
@@ -3858,6 +4008,29 @@ export default function App() {
     });
   }, []);
 
+  // Heartbeat for online status
+  useEffect(() => {
+    if (!currentUser) return;
+    const updateActiveStatus = async () => {
+      try {
+        await updateDoc(doc(db, 'users', currentUser.id), {
+          lastActive: serverTimestamp()
+        });
+      } catch (e) {}
+    };
+    
+    updateActiveStatus();
+    const interval = setInterval(updateActiveStatus, 60 * 1000); // 1 minute
+    
+    const handleFocus = () => updateActiveStatus();
+    window.addEventListener('focus', handleFocus);
+    
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [currentUser?.id]);
+
   useEffect(() => {
     if (!currentUser) {
       setPosts([]);
@@ -3934,12 +4107,21 @@ export default function App() {
 
   const updateProfile = async (updates: Partial<User>) => {
     if (!currentUser) return;
+    const oldProfile = { ...currentUser };
     const newProfile = { ...currentUser, ...updates };
     setCurrentUser(newProfile);
     try {
-      await updateDoc(doc(db, 'users', currentUser.id), updates);
+      const firestoreUpdates = { ...updates };
+      Object.keys(firestoreUpdates).forEach(key => {
+        if (firestoreUpdates[key as keyof typeof firestoreUpdates] === undefined) {
+          delete firestoreUpdates[key as keyof typeof firestoreUpdates];
+        }
+      });
+      await updateDoc(doc(db, 'users', currentUser.id), firestoreUpdates);
     } catch (e) {
       console.error("Error updating profile", e);
+      setCurrentUser(oldProfile); // Revert
+      throw e;
     }
   };
 
@@ -4051,6 +4233,34 @@ export default function App() {
     }
   };
 
+  const deleteChat = async (chatId: string) => {
+    try {
+      await deleteDoc(doc(db, 'chats', chatId));
+      // Optionally delete nested collections or assume standard cascade/cron
+      setChats(prev => prev.filter(c => c.id !== chatId));
+      showToast('Chat deleted');
+    } catch (e) {
+      console.error("Error deleting chat", e);
+      showToast('Error deleting chat');
+    }
+  };
+
+  const removeGroupMember = async (chatId: string, userIdToRemove: string) => {
+    try {
+      const chatRef = doc(db, 'chats', chatId);
+      const chatDoc = await getDoc(chatRef);
+      if (chatDoc.exists()) {
+        const u = chatDoc.data().users || [];
+        const newU = u.filter((id: string) => id !== userIdToRemove);
+        await updateDoc(chatRef, { users: newU });
+        showToast('Member removed');
+      }
+    } catch(e) {
+      console.error("Error removing member", e);
+      showToast('Error removing member');
+    }
+  };
+
   const updateTheme = async (newTheme: 'light' | 'dark') => {
     setTheme(newTheme);
     if (currentUser) {
@@ -4063,10 +4273,19 @@ export default function App() {
     }
   };
 
+  const appBgStyle = currentUser?.appThemeParams?.feedColor ? { backgroundColor: currentUser.appThemeParams.feedColor } : {};
+
   return (
-    <AppContext.Provider value={{ currentUser, logout, updateProfile, posts, setPosts, updatePost, deletePost, chats, messages, setMessages, notifications, followingIds, toggleLike, sendMessage, deleteMessage, showToast, theme, setTheme: updateTheme }}>
-      <div className="min-h-[100dvh] h-[100dvh] bg-white dark:bg-black text-black dark:text-white font-sans flex justify-center w-full">
-        <div className="w-full h-full max-w-5xl bg-white dark:bg-black relative flex flex-col overflow-hidden">
+    <AppContext.Provider value={{ currentUser, logout, updateProfile, posts, setPosts, updatePost, deletePost, deleteChat, removeGroupMember, chats, messages, setMessages, notifications, followingIds, toggleLike, sendMessage, deleteMessage, showToast, theme, setTheme: updateTheme }}>
+      {currentUser?.appThemeParams?.feedColor && (
+        <style dangerouslySetInnerHTML={{ __html: `
+          body, html, .bg-white.dark\\:bg-black {
+            background-color: ${currentUser.appThemeParams.feedColor} !important;
+          }
+        `}} />
+      )}
+      <div className="min-h-[100dvh] h-[100dvh] bg-white dark:bg-black text-black dark:text-white font-sans flex justify-center w-full" style={appBgStyle}>
+        <div className="w-full h-full max-w-5xl bg-white dark:bg-black relative flex flex-col overflow-hidden" style={appBgStyle}>
           
           <AnimatePresence>
             {toastMsg && (
@@ -4082,7 +4301,7 @@ export default function App() {
           </AnimatePresence>
           
           {isAuthChecking ? (
-            <div className="flex-1 flex justify-center items-center bg-white dark:bg-black"><span className="text-zinc-500 dark:text-zinc-500 font-bold tracking-widest uppercase text-xs">Loading...</span></div>
+            <div className="flex-1 flex justify-center items-center bg-white dark:bg-black"><span className="text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 dark:text-zinc-500 font-bold tracking-widest uppercase text-xs">Loading...</span></div>
           ) : !currentUser ? (
             <AuthScreen />
           ) : (
@@ -4091,7 +4310,7 @@ export default function App() {
                 <div className="hidden md:flex flex-col w-[80px] lg:w-[240px] shrink-0 border-r border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black relative z-40">
                    <SideNav />
                 </div>
-                <div className="flex-1 flex flex-col min-h-0 relative w-full max-w-[600px] mx-auto pt-safe sm:border-x border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black">
+                <div className="flex-1 flex flex-col min-h-0 relative w-full max-w-[600px] mx-auto pt-safe sm:border-x border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black" style={appBgStyle}>
                   <AnimatePresence mode="wait">
                     <Routes>
                       <Route path="/" element={<FeedScreen />} />

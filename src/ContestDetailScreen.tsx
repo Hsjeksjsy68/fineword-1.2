@@ -276,7 +276,7 @@ export const ContestDetailScreen = () => {
   );
 };
 
-const MatchList = ({ matches, round, currentUser, users, isHost, contest }: { matches: ContestMatch[], round: number, currentUser: User|null, users: User[], isHost: boolean, contest: Contest }) => {
+const MatchList: React.FC<{ matches: ContestMatch[], round: number, currentUser: any, users: any[], isHost: boolean, contest: Contest }> = ({ matches, round, currentUser, users, isHost, contest }) => {
   const roundMatches = matches.filter(m => m.round === round);
   const [uploadingMatch, setUploadingMatch] = useState<string | null>(null);
 
