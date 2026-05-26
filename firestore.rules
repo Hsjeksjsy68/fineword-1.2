@@ -61,8 +61,7 @@ service cloud.firestore {
         && (!('hideBadges' in data) || data.hideBadges is bool)
         && (!('badges' in data) || data.badges is list)
         && (!('activeBadgeId' in data) || data.activeBadgeId is string || data.activeBadgeId == null)
-        && (!('lastActive' in data) || data.lastActive is timestamp)
-        && (!('appThemeParams' in data) || data.appThemeParams is map);
+        && (!('lastActive' in data) || data.lastActive is timestamp);
     }
 
     function isValidPost(data) {
@@ -203,7 +202,7 @@ service cloud.firestore {
                     && (
                       (
                         isOwner(userId)
-                        && incoming().diff(existing()).affectedKeys().hasOnly(['username', 'name', 'avatar', 'bio', 'theme', 'verificationStatus', 'verificationData', 'deactivated', 'hideBadges', 'activeBadgeId', 'lastActive', 'appThemeParams'])
+                        && incoming().diff(existing()).affectedKeys().hasOnly(['username', 'name', 'avatar', 'bio', 'theme', 'verificationStatus', 'verificationData', 'deactivated', 'hideBadges', 'activeBadgeId', 'lastActive'])
                         && (!('verificationStatus' in incoming().diff(existing()).affectedKeys()) || incoming().verificationStatus in ['pending', 'none'])
                       )
                       ||
@@ -272,6 +271,19 @@ service cloud.firestore {
           && incoming().diff(existing()).affectedKeys().hasOnly(['optionIndex'])
           && incoming().optionIndex is number;
       }
+    }
+
+    // Reports Collection
+    match /reports/{reportId} {
+      allow read: if isAdmin();
+      allow list: if isAdmin();
+      allow create: if isSignedIn()
+                    && incoming().keys().hasAll(['id', 'reporterId', 'targetId', 'type', 'reason', 'status', 'createdAt'])
+                    && incoming().id == reportId
+                    && incoming().reporterId == request.auth.uid
+                    && incoming().createdAt == request.time;
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
     }
 
     // Posts Collection
