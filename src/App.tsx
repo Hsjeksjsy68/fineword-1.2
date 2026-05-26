@@ -11,7 +11,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { db, auth } from './firebase';
-import { doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, onSnapshot, query, orderBy, serverTimestamp, Timestamp, where } from 'firebase/firestore';
+import { doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, onSnapshot, query, orderBy, serverTimestamp, Timestamp, where, limit } from 'firebase/firestore';
 import { signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, User as FirebaseUser, deleteUser, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
 
 export enum OperationType {
@@ -2236,6 +2236,54 @@ const StoriesBar = () => {
 import { ContestsScreen } from './ContestsScreen';
 import { ContestDetailScreen } from './ContestDetailScreen';
 
+
+const SuggestedUsers = () => {
+  const { currentUser, followingIds } = useApp();
+  const [users, setUsers] = useState<User[]>([]);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!currentUser) return;
+    const fetchSuggested = async () => {
+      try {
+        const q = query(collection(db, 'users'), limit(50));
+        const snap = await getDocs(q);
+        const fetched = [];
+        snap.forEach(d => {
+          const u = d.data();
+          if (u.id !== currentUser.id && !followingIds.includes(u.id)) {
+            fetched.push(u);
+          }
+        });
+        // Shuffle and take top 10
+        setUsers(fetched.sort(() => 0.5 - Math.random()).slice(0, 10));
+      } catch (e) {
+        console.error("Error fetching suggested users: ", e);
+      }
+    };
+    fetchSuggested();
+  }, [currentUser, followingIds]);
+
+  if (users.length === 0) return null;
+
+  return (
+    <div className="py-4 border-b border-zinc-200 dark:border-zinc-800">
+      <div className="px-5 mb-3 flex items-center justify-between">
+        <h3 className="font-semibold text-[14px] text-zinc-900 dark:text-zinc-100">Suggested for you</h3>
+      </div>
+      <div className="flex overflow-x-auto gap-3 px-5 pb-2 scrollbar-none snap-x flex-nowrap" style={{ msOverflowStyle: 'none', scrollbarWidth: 'none' }}>
+        {users.map(u => (
+          <div key={u.id} className="snap-start shrink-0 flex flex-col items-center p-4 w-[140px] rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 shadow-sm cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" onClick={() => navigate(`/profile/${u.username}`)}>
+            <img src={u.avatar || undefined} alt={u.username} className="w-14 h-14 rounded-full object-cover mb-2 border border-zinc-200 dark:border-zinc-700" />
+            <span className="font-semibold text-[13px] text-zinc-900 dark:text-zinc-100 w-full text-center truncate">{u.name || u.username}</span>
+            <span className="text-[12px] text-zinc-500 dark:text-zinc-400 w-full text-center truncate mb-3">@{u.username}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 const FeedScreen = () => {
   const { posts, followingIds, currentUser, showToast, theme, setTheme, notifications, chats } = useApp();
   const [feedType, setFeedType] = useState<'latest' | 'following'>('latest');
@@ -2318,6 +2366,7 @@ const FeedScreen = () => {
       </header>
       <div className="flex-1 overflow-y-auto divide-y divide-zinc-900/50 pb-6">
         <StoriesBar />
+        <SuggestedUsers />
         {displayPosts.length === 0 ? (
           <div className="flex flex-col items-center justify-center p-10 h-64 text-center">
             <p className="text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 font-medium">No posts here yet.</p>
