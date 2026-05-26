@@ -2273,7 +2273,7 @@ const SuggestedUsers = () => {
       </div>
       <div className="flex overflow-x-auto gap-3 px-5 pb-2 scrollbar-none snap-x flex-nowrap" style={{ msOverflowStyle: 'none', scrollbarWidth: 'none' }}>
         {users.map(u => (
-          <div key={u.id} className="snap-start shrink-0 flex flex-col items-center p-4 w-[140px] rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 shadow-sm cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" onClick={() => navigate(`/profile/${u.username}`)}>
+          <div key={u.id} className="snap-start shrink-0 flex flex-col items-center p-4 w-[140px] rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 shadow-sm cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" onClick={() => navigate(`/${u.username}`)}>
             <img src={u.avatar || undefined} alt={u.username} className="w-14 h-14 rounded-full object-cover mb-2 border border-zinc-200 dark:border-zinc-700" />
             <span className="font-semibold text-[13px] text-zinc-900 dark:text-zinc-100 w-full text-center truncate">{u.name || u.username}</span>
             <span className="text-[12px] text-zinc-500 dark:text-zinc-400 w-full text-center truncate mb-3">@{u.username}</span>
@@ -2984,8 +2984,8 @@ const ChatRoomScreen = () => {
         <div ref={messagesEndRef} className="pt-2" />
       </div>
 
-      <form onSubmit={handleSend} className="px-4 py-3 bg-white dark:bg-black border-t border-zinc-200 dark:border-zinc-800 mb-safe shrink-0">
-        <div className="flex items-center gap-3">
+      <form onSubmit={handleSend} className="px-4 py-3 bg-white dark:bg-black border-t border-zinc-200 dark:border-zinc-800 mb-safe shrink-0 w-full box-border">
+        <div className="flex items-center gap-2 sm:gap-3 w-full max-w-full">
           <div className="bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-full flex-1 min-w-0 flex items-center pr-2 pl-4 py-2">
             <input 
               type="text"

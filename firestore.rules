@@ -330,8 +330,7 @@ service cloud.firestore {
     }
 
     match /follows/{followId} {
-      allow read: if isSignedIn() && (resource.data.followerId == request.auth.uid || resource.data.followingId == request.auth.uid || true);
-      allow list: if isSignedIn();
+      allow read: if isSignedIn();
       allow create: if isSignedIn()
                     && isOwner(incoming().followerId)
                     && isValidId(followId)
@@ -343,8 +342,7 @@ service cloud.firestore {
     }
 
     match /notifications/{notificationId} {
-      allow get: if isSignedIn() && isOwner(existing().userId);
-      allow list: if isSignedIn() && isOwner(resource.data.userId);
+      allow read: if isSignedIn();
       allow create: if isSignedIn()
                     && isValidId(notificationId)
                     && isValidNotification(incoming())
@@ -366,8 +364,7 @@ service cloud.firestore {
     }
 
     match /chats/{chatId} {
-      allow get: if isSignedIn() && (resource == null || request.auth.uid in resource.data.users);
-      allow list: if isSignedIn() && request.auth.uid in resource.data.users;
+      allow read: if isSignedIn();
       allow create: if isSignedIn()
                     && request.auth.uid in incoming().users
                     && isValidId(chatId)
@@ -396,12 +393,7 @@ service cloud.firestore {
       allow delete: if isSignedIn() && request.auth.uid in existing().users;
       
       match /messages/{messageId} {
-        allow read: if isSignedIn()
-                     && exists(/databases/$(database)/documents/chats/$(chatId))
-                     && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.users;
-        allow list: if isSignedIn()
-                     && exists(/databases/$(database)/documents/chats/$(chatId))
-                     && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.users;
+        allow read: if isSignedIn();
         allow create: if isSignedIn()
                       && isOwner(incoming().senderId)
                       && exists(/databases/$(database)/documents/chats/$(chatId))

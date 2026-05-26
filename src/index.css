@@ -13,6 +13,13 @@ html, body {
   padding: 0;
 }
 
+.mb-safe {
+  margin-bottom: env(safe-area-inset-bottom);
+}
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
 .hide-scrollbar::-webkit-scrollbar {
   display: none;
 }
