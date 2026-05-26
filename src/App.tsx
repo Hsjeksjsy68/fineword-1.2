@@ -2927,7 +2927,19 @@ const ChatRoomScreen = () => {
                     )}
                   </div>
                 )}
-                <div className={cn("flex flex-col group max-w-[75%]", isMe ? "items-end" : "items-start")}>
+                <div className={cn("flex flex-col group max-w-[75%] select-none", isMe ? "items-end" : "items-start")}
+                  onTouchStart={(e) => {
+                    if (!isMe || msg.isDeleted) return;
+                    (e.currentTarget as any)._hold = setTimeout(() => {
+                      if (confirm('Delete message?')) deleteMessage(chatId, msg.id);
+                    }, 500);
+                  }}
+                  onTouchEnd={(e) => clearTimeout((e.currentTarget as any)._hold)}
+                  onTouchMove={(e) => clearTimeout((e.currentTarget as any)._hold)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                  }}
+                >
                   {isGroup && !isMe && !isSameSenderAsPrev && sender && (
                     <span className="text-[11px] text-zinc-500 dark:text-zinc-500 ml-1 mb-1">{senderName}</span>
                   )}
@@ -2955,7 +2967,7 @@ const ChatRoomScreen = () => {
                     {isMe && !msg.isDeleted && (
                         <button 
                           onClick={() => { if(confirm('Delete message?')) deleteMessage(chatId, msg.id) }} 
-                          className="opacity-0 group-hover:opacity-100 transition-opacity text-[10px] text-rose-500 uppercase tracking-widest font-bold"
+                          className="opacity-0 lg:group-hover:opacity-100 transition-opacity text-[10px] text-rose-500 uppercase tracking-widest font-bold"
                         >
                           Delete
                         </button>
@@ -2974,13 +2986,13 @@ const ChatRoomScreen = () => {
 
       <form onSubmit={handleSend} className="px-4 py-3 bg-white dark:bg-black border-t border-zinc-200 dark:border-zinc-800 mb-safe shrink-0">
         <div className="flex items-center gap-3">
-          <div className="bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-full flex-1 flex items-center pr-2 pl-4 py-2">
+          <div className="bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-full flex-1 min-w-0 flex items-center pr-2 pl-4 py-2">
             <input 
               type="text"
               value={text}
               onChange={e => setText(e.target.value)}
               placeholder="Message..."
-              className="bg-transparent flex-1 outline-none py-1 text-[15px] placeholder:text-black dark:text-white"
+              className="bg-transparent flex-1 min-w-0 outline-none py-1 text-[15px] placeholder:text-black dark:text-white"
             />
             <label className="p-1.5 rounded-full text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 hover:text-indigo-500 hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors cursor-pointer shrink-0">
               <ImageIcon size={20} />
