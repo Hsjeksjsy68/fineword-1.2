@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Link, useNavigate, useLocation, useParams, useSearchParams } from 'react-router-dom';
-import { Home, MessageCircle, User as UserIcon, Heart, Send, PlusSquare, Image as ImageIcon, ChevronLeft, MoreHorizontal, LogOut, Search, Moon, Sun, Share2, Music, Type, Palette, Check, BarChart2, X, Trophy, Settings } from 'lucide-react';
+import { Home, MessageCircle, User as UserIcon, Heart, Send, PlusSquare, Image as ImageIcon, ChevronLeft, MoreHorizontal, LogOut, Search, Moon, Sun, Share2, Music, Type, Palette, Check, BarChart2, X, Trophy, Settings, Phone, Video, PhoneOff, Mic, MicOff, Camera, CameraOff } from 'lucide-react';
 import { formatDistanceToNow, format, isSameDay } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
@@ -2853,6 +2853,32 @@ const ChatRoomScreen = () => {
             </div>
           </Link>
         )}
+        {!isGroup && (
+          <div className="flex items-center gap-1 mr-1">
+            <button 
+              onClick={() => {
+                const otherUserId = chat.users.find(u => u !== currentUser?.id);
+                if (otherUserId && chatUsers[otherUserId]) {
+                  startCall(currentUser, chatUsers[otherUserId], 'audio');
+                }
+              }}
+              className="p-2 rounded-full transition-colors text-zinc-500 hover:text-indigo-600 dark:text-zinc-400 dark:hover:text-indigo-400 hover:bg-zinc-100 dark:hover:bg-zinc-900"
+            >
+              <Phone size={20} />
+            </button>
+            <button 
+              onClick={() => {
+                const otherUserId = chat.users.find(u => u !== currentUser?.id);
+                if (otherUserId && chatUsers[otherUserId]) {
+                  startCall(currentUser, chatUsers[otherUserId], 'video');
+                }
+              }}
+              className="p-2 rounded-full transition-colors text-zinc-500 hover:text-indigo-600 dark:text-zinc-400 dark:hover:text-indigo-400 hover:bg-zinc-100 dark:hover:bg-zinc-900"
+            >
+              <Video size={20} />
+            </button>
+          </div>
+        )}
         <button 
           onClick={() => {
             setIsSearching(!isSearching);
@@ -3949,6 +3975,7 @@ const AuthScreen = () => {
   );
 };
 
+import { CallManager, startCall } from './CallManager';
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isAuthChecking, setIsAuthChecking] = useState(true);
@@ -4362,6 +4389,7 @@ export default function App() {
               <div className="md:hidden shrink-0">
                 <BottomNav />
               </div>
+              <CallManager />
             </BrowserRouter>
           )}
         </div>

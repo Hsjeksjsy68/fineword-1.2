@@ -274,6 +274,12 @@ service cloud.firestore {
     }
 
     // Reports Collection
+    
+    match /calls/{callId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
     match /reports/{reportId} {
       allow read: if isAdmin();
       allow list: if isAdmin();
