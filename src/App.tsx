@@ -424,13 +424,19 @@ const SideNav = () => {
            </div>
          </button>
          <Link to="/profile" className="flex items-center gap-3 p-2 hover:bg-zinc-100 dark:hover:bg-zinc-900 rounded-xl transition-colors w-full group overflow-hidden">
-            <img src={currentUser?.avatar || undefined} className="w-10 h-10 rounded-full bg-zinc-200 dark:bg-zinc-800 shrink-0" />
+            {currentUser ? (
+              <img src={currentUser.avatar || undefined} className="w-10 h-10 rounded-full bg-zinc-200 dark:bg-zinc-800 shrink-0 object-cover" />
+            ) : (
+              <div className="w-10 h-10 rounded-full bg-zinc-200 dark:bg-zinc-800 shrink-0 flex items-center justify-center text-zinc-500"><UserIcon size={20} /></div>
+            )}
             <div className="hidden lg:flex flex-col flex-1 min-w-0">
                <span className="text-[14px] font-bold text-zinc-900 dark:text-zinc-100 flex items-center truncate">
-                 <span className="truncate">{currentUser?.name}</span>
+                 <span className="truncate">{currentUser?.name || 'Guest User'}</span>
                  <VerifiedBadge isVerified={currentUser?.isVerified} />
                </span>
-               <span className="text-[12px] text-zinc-500 dark:text-zinc-500 truncate">@{currentUser?.username}</span>
+               <span className="text-[12px] text-zinc-500 dark:text-zinc-500 truncate">
+                 {currentUser ? `@${currentUser.username}` : 'Click to login'}
+               </span>
             </div>
          </Link>
       </div>
@@ -709,7 +715,11 @@ const CommentsScreen = () => {
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!commentText.trim() || !currentUser || !postId) return;
+    if (!currentUser) {
+      showToast('Please log in to comment.');
+      return;
+    }
+    if (!commentText.trim() || !postId) return;
     const cid = `c${Date.now()}`;
     const newComment = {
       id: cid,
@@ -1841,10 +1851,14 @@ const StoryViewerModal = ({ stories, user, currentUser, onClose }: { stories: St
   const story = stories[index];
 
   useEffect(() => {
-    if (!story || !currentUser) return;
-    const unsub = onSnapshot(doc(db, `stories/${story.id}/likes`, currentUser.id), snap => {
-       setHasLiked(snap.exists());
-    });
+    if (!story) return;
+    
+    let unsubLike = () => {};
+    if (currentUser) {
+      unsubLike = onSnapshot(doc(db, `stories/${story.id}/likes`, currentUser.id), snap => {
+         setHasLiked(snap.exists());
+      });
+    }
     
     const qComments = query(collection(db, `stories/${story.id}/comments`), orderBy('createdAt', 'desc'));
     const unsubComments = onSnapshot(qComments, snap => {
@@ -1856,7 +1870,7 @@ const StoryViewerModal = ({ stories, user, currentUser, onClose }: { stories: St
     });
 
     return () => {
-      unsub();
+      unsubLike();
       unsubComments();
       unsubVotes();
     };
@@ -1964,7 +1978,11 @@ const StoryViewerModal = ({ stories, user, currentUser, onClose }: { stories: St
                          disabled={isVoting || myVote !== undefined || story.userId === vId}
                          onClick={async (e) => {
                            e.stopPropagation();
-                           if (!currentUser || isVoting || myVote) return;
+                           if (!currentUser) {
+                             showToast('Please log in to vote.');
+                             return;
+                           }
+                           if (isVoting || myVote) return;
                            setIsVoting(true);
                            try {
                              await setDoc(doc(db, `stories/${story.id}/pollVotes`, currentUser.id), {
@@ -2017,7 +2035,11 @@ const StoryViewerModal = ({ stories, user, currentUser, onClose }: { stories: St
         <div className="absolute bottom-0 left-0 w-full p-4 z-30 bg-gradient-to-t from-black/80 to-transparent">
           <form className="flex items-center gap-3 relative" onSubmit={async (e) => {
              e.preventDefault();
-             if (!currentUser || !comment.trim()) return;
+             if (!currentUser) {
+               showToast('Please log in to comment.');
+               return;
+             }
+             if (!comment.trim()) return;
              const cid = `c${Date.now()}`;
              const text = comment;
              setComment('');
@@ -2052,7 +2074,11 @@ const StoryViewerModal = ({ stories, user, currentUser, onClose }: { stories: St
               disabled={isLiking}
               onClick={async (e) => {
                 e.stopPropagation();
-                if (!currentUser || isLiking) return;
+                if (!currentUser) {
+                  showToast('Please log in to like.');
+                  return;
+                }
+                if (isLiking) return;
                 setIsLiking(true);
                 try {
                   const likeId = currentUser.id;
@@ -2197,17 +2223,27 @@ const StoriesBar = () => {
         <div className="flex px-4 items-start gap-4 overflow-x-auto hide-scrollbar">
           <div className="flex flex-col items-center gap-1.5 shrink-0 transition-opacity relative">
             <div className="relative cursor-pointer" onClick={() => {
+               if (!currentUser) {
+                 showToast('Please log in to add a story.');
+                 return;
+               }
                if (myStories && myStories.length > 0) {
-                  setViewingUserId(currentUser!.id);
+                  setViewingUserId(currentUser.id);
                } else {
                   setIsCreatorOpen(true);
                }
             }}>
               <div className={cn("w-[68px] h-[68px] rounded-full flex items-center justify-center p-[2px] shadow-sm", myStories && myStories.length > 0 ? "bg-gradient-to-tr from-zinc-300 to-zinc-400" : "")}>
-                <img src={currentUser?.avatar || undefined} alt="Your story" className="w-[60px] h-[60px] rounded-full bg-zinc-200 dark:bg-zinc-800 border-2 border-white dark:border-black object-cover" />
+                {currentUser ? <img src={currentUser?.avatar || undefined} alt="Your story" className="w-[60px] h-[60px] rounded-full bg-zinc-200 dark:bg-zinc-800 border-2 border-white dark:border-black object-cover" /> : <div className="w-[60px] h-[60px] rounded-full bg-zinc-200 dark:bg-zinc-800 border-2 border-white dark:border-black flex items-center justify-center text-zinc-500"><UserIcon size={30} /></div>}
               </div>
             </div>
-            <div className="absolute bottom-5 right-0 bg-indigo-500 rounded-full w-5 h-5 flex items-center justify-center shadow-sm cursor-pointer z-10 hover:scale-110 transition-transform" onClick={() => setIsCreatorOpen(true)}>
+            <div className="absolute bottom-5 right-0 bg-indigo-500 rounded-full w-5 h-5 flex items-center justify-center shadow-sm cursor-pointer z-10 hover:scale-110 transition-transform" onClick={() => {
+               if (!currentUser) {
+                 showToast('Please log in to add a story.');
+                 return;
+               }
+               setIsCreatorOpen(true);
+            }}>
               <PlusSquare size={12} className="text-black dark:text-white" />
             </div>
             <span className="text-[11px] text-zinc-500 dark:text-zinc-500 dark:text-zinc-400">Your story</span>
@@ -2243,15 +2279,14 @@ const SuggestedUsers = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!currentUser) return;
     const fetchSuggested = async () => {
       try {
         const q = query(collection(db, 'users'), limit(50));
         const snap = await getDocs(q);
         const fetched = [];
         snap.forEach(d => {
-          const u = d.data();
-          if (u.id !== currentUser.id && !followingIds.includes(u.id)) {
+          const u = d.data() as User;
+          if (!currentUser || (u.id !== currentUser.id && !followingIds.includes(u.id))) {
             fetched.push(u);
           }
         });
@@ -2356,12 +2391,14 @@ const FeedScreen = () => {
           >
             Latest
           </button>
-          <button 
-            onClick={() => setFeedType('following')} 
-            className={cn("pb-2 px-2 text-[14px] font-bold transition-colors border-b-2", feedType === 'following' ? "border-black dark:border-white text-black dark:text-white" : "border-transparent text-zinc-500 dark:text-zinc-500")}
-          >
-            Following
-          </button>
+          {currentUser && (
+            <button 
+              onClick={() => setFeedType('following')} 
+              className={cn("pb-2 px-2 text-[14px] font-bold transition-colors border-b-2", feedType === 'following' ? "border-black dark:border-white text-black dark:text-white" : "border-transparent text-zinc-500 dark:text-zinc-500")}
+            >
+              Following
+            </button>
+          )}
         </div>
       </header>
       <div className="flex-1 overflow-y-auto divide-y divide-zinc-900/50 pb-6">
@@ -2859,7 +2896,7 @@ const ChatRoomScreen = () => {
               onClick={() => {
                 const otherUserId = chat.users.find(u => u !== currentUser?.id);
                 if (otherUserId && chatUsers[otherUserId]) {
-                  startCall(currentUser, chatUsers[otherUserId], 'audio');
+                  startCall(currentUser, chatUsers[otherUserId], 'audio', chat.id);
                 }
               }}
               className="p-2 rounded-full transition-colors text-zinc-500 hover:text-indigo-600 dark:text-zinc-400 dark:hover:text-indigo-400 hover:bg-zinc-100 dark:hover:bg-zinc-900"
@@ -2870,7 +2907,7 @@ const ChatRoomScreen = () => {
               onClick={() => {
                 const otherUserId = chat.users.find(u => u !== currentUser?.id);
                 if (otherUserId && chatUsers[otherUserId]) {
-                  startCall(currentUser, chatUsers[otherUserId], 'video');
+                  startCall(currentUser, chatUsers[otherUserId], 'video', chat.id);
                 }
               }}
               className="p-2 rounded-full transition-colors text-zinc-500 hover:text-indigo-600 dark:text-zinc-400 dark:hover:text-indigo-400 hover:bg-zinc-100 dark:hover:bg-zinc-900"
@@ -2930,6 +2967,29 @@ const ChatRoomScreen = () => {
           const isSameSenderAsNext = nextMsg && nextMsg.senderId === msg.senderId;
           
           const showDateHeader = !prevMsg || !isSameDay(msg.createdAt, prevMsg.createdAt);
+          const isSystem = msg.senderId === 'system';
+          
+          if (isSystem) {
+             const isVideo = msg.text.toLowerCase().includes('video');
+             return (
+               <React.Fragment key={msg.id}>
+                 {showDateHeader && (
+                   <div className="flex justify-center my-6">
+                     <span className="text-[11px] font-bold text-zinc-500 dark:text-zinc-500 uppercase tracking-widest bg-zinc-100 dark:bg-zinc-900 px-3 py-1 rounded-full">
+                       {format(msg.createdAt, 'MMM d, yyyy')}
+                     </span>
+                   </div>
+                 )}
+                 <div className="flex justify-center my-2">
+                    <span className="flex items-center gap-2 px-4 py-1.5 bg-zinc-100 dark:bg-zinc-900 rounded-full text-xs font-semibold tracking-wide text-zinc-500 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-800">
+                      {isVideo ? <Video size={14} className="text-zinc-400" /> : <Phone size={14} className="text-zinc-400" />}
+                      {msg.text}
+                    </span>
+                 </div>
+               </React.Fragment>
+             );
+          }
+
           const sender = isMe ? currentUser : chatUsers[msg.senderId];
           const needsAvatarSpace = !isMe && !isSameSenderAsNext;
           const senderName = sender ? (chat.nicknames?.[sender.id] || sender.name) : 'Unknown';
@@ -3445,7 +3505,12 @@ const UserProfileScreen = () => {
   const [reportReason, setReportReason] = useState('');
 
   const handleReportUser = async () => {
-    if (!reportReason.trim() || !currentUser || !user) return;
+    if (!currentUser) {
+      showToast('Please log in to report.');
+      setShowReportModal(false);
+      return;
+    }
+    if (!reportReason.trim() || !user) return;
     try {
       const reportId = `rep_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
       await setDoc(doc(db, 'reports', reportId), {
@@ -3531,7 +3596,11 @@ const UserProfileScreen = () => {
   };
 
   const handleFollowToggle = async () => {
-    if (!currentUser || !userId || loadingFollow) return;
+    if (!currentUser) {
+      showToast('Please log in to follow.');
+      return;
+    }
+    if (!userId || loadingFollow) return;
     setLoadingFollow(true);
     const followId = `${currentUser.id}_${userId}`;
     try {
@@ -3567,7 +3636,11 @@ const UserProfileScreen = () => {
   };
 
   const handleMessage = async () => {
-     if (!currentUser || !userId) return;
+     if (!currentUser) {
+         showToast('Please log in to send a message.');
+         return;
+     }
+     if (!userId) return;
      // Check if chat exists
      // Sorting to make consistent chat ID
      const users = [currentUser.id, userId].sort();
@@ -3838,6 +3911,14 @@ const ProfileScreen = () => {
 
 // --- APP ROOT ------ APP ROOT ---
 
+const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+  const { currentUser } = useApp();
+  if (!currentUser) {
+    return <AuthScreen />;
+  }
+  return <>{children}</>;
+};
+
 const AuthScreen = () => {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -4094,10 +4175,6 @@ export default function App() {
   }, [currentUser?.id]);
 
   useEffect(() => {
-    if (!currentUser) {
-      setPosts([]);
-      return;
-    }
     const q = query(collection(db, 'posts'), orderBy('createdAt', 'desc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const dbPosts: Post[] = [];
@@ -4114,7 +4191,7 @@ export default function App() {
       console.error("Posts fetch error:", error.message);
     });
     return unsubscribe;
-  }, [currentUser]);
+  }, []);
 
   useEffect(() => {
     if (!currentUser) {
@@ -4197,7 +4274,10 @@ export default function App() {
   };
 
   const toggleLike = async (postId: string) => {
-    if (!currentUser) return;
+    if (!currentUser) {
+      showToast('Please log in to like a post.');
+      return;
+    }
     const post = posts.find(p => p.id === postId);
     if (!post) return;
     
@@ -4355,8 +4435,6 @@ export default function App() {
           
           {isAuthChecking ? (
             <div className="flex-1 flex justify-center items-center bg-white dark:bg-black"><span className="text-zinc-500 dark:text-zinc-500 font-bold tracking-widest uppercase text-xs">Loading...</span></div>
-          ) : !currentUser ? (
-            <AuthScreen />
           ) : (
             <BrowserRouter>
               <div className="flex-1 flex flex-col md:flex-row min-h-0 relative w-full h-full">
@@ -4366,21 +4444,21 @@ export default function App() {
                 <div className="flex-1 flex flex-col min-h-0 relative w-full max-w-[600px] mx-auto pt-safe sm:border-x border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black">
                   <AnimatePresence mode="wait">
                     <Routes>
-                      <Route path="/" element={<FeedScreen />} />
-                      <Route path="/notifications" element={<NotificationsScreen />} />
-                      <Route path="/search" element={<SearchScreen />} />
-                      <Route path="/create" element={<CreatePostScreen />} />
-                      <Route path="/contests" element={<ContestsScreen />} />
-                      <Route path="/contest/:id" element={<ContestDetailScreen />} />
-                      <Route path="/chat" element={<ChatListScreen />} />
-                      <Route path="/chat/group/create" element={<CreateGroupChatScreen />} />
-                      <Route path="/chat/:id" element={<ChatRoomScreen />} />
-                      <Route path="/post/:postId/comments" element={<CommentsScreen />} />
-                      <Route path="/profile" element={<ProfileScreen />} />
-                      <Route path="/profile/edit" element={<EditProfileScreen />} />
-                      <Route path="/settings" element={<SettingsScreen />} />
-                      <Route path="/admin" element={<AdminDashboardScreen />} />
-                      <Route path="/:username" element={<UserProfileScreen />} />
+                        <Route path="/" element={<FeedScreen />} />
+                      <Route path="/notifications" element={<ProtectedRoute><NotificationsScreen /></ProtectedRoute>} />
+                      <Route path="/search" element={<ProtectedRoute><SearchScreen /></ProtectedRoute>} />
+                      <Route path="/create" element={<ProtectedRoute><CreatePostScreen /></ProtectedRoute>} />
+                      <Route path="/contests" element={<ProtectedRoute><ContestsScreen /></ProtectedRoute>} />
+                      <Route path="/contest/:id" element={<ProtectedRoute><ContestDetailScreen /></ProtectedRoute>} />
+                      <Route path="/chat" element={<ProtectedRoute><ChatListScreen /></ProtectedRoute>} />
+                      <Route path="/chat/group/create" element={<ProtectedRoute><CreateGroupChatScreen /></ProtectedRoute>} />
+                      <Route path="/chat/:id" element={<ProtectedRoute><ChatRoomScreen /></ProtectedRoute>} />
+                      <Route path="/post/:postId/comments" element={<ProtectedRoute><CommentsScreen /></ProtectedRoute>} />
+                      <Route path="/profile" element={<ProtectedRoute><ProfileScreen /></ProtectedRoute>} />
+                      <Route path="/profile/edit" element={<ProtectedRoute><EditProfileScreen /></ProtectedRoute>} />
+                      <Route path="/settings" element={<ProtectedRoute><SettingsScreen /></ProtectedRoute>} />
+                      <Route path="/admin" element={<ProtectedRoute><AdminDashboardScreen /></ProtectedRoute>} />
+                      <Route path="/:username" element={<ProtectedRoute><UserProfileScreen /></ProtectedRoute>} />
                     </Routes>
                   </AnimatePresence>
                 </div>
