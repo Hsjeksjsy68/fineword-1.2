@@ -10,6 +10,7 @@ import { formatDistanceToNow, format, isSameDay } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { DecorativeLoader } from './Loader';
 import { db, auth } from './firebase';
 import { doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, onSnapshot, query, orderBy, serverTimestamp, Timestamp, where, limit } from 'firebase/firestore';
 import { signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, User as FirebaseUser, deleteUser, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
@@ -895,13 +896,12 @@ const SettingsScreen = () => {
 
   const handleDeactivate = async () => {
     if (!currentUser) return;
-    if (window.confirm('Are you sure you want to deactivate your account?')) {
+    if (window.confirm(currentUser.deactivated ? 'Are you sure you want to reactivate your account?' : 'Are you sure you want to deactivate your account?')) {
       try {
         await updateDoc(doc(db, 'users', currentUser.id), {
-          deactivated: true
+          deactivated: !currentUser.deactivated
         });
-        showToast('Account deactivated');
-        logout();
+        showToast(currentUser.deactivated ? 'Account reactivated' : 'Account deactivated');
       } catch (e) {
         console.error(e);
         showToast('Error deactivating account');
@@ -968,7 +968,7 @@ const SettingsScreen = () => {
             onClick={handleDeactivate}
             className="w-full text-left bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-800 p-4 rounded-xl font-medium text-orange-600 transition-colors"
           >
-            Deactivate account
+            {currentUser?.deactivated ? 'Reactivate account' : 'Deactivate account'}
           </button>
           <button 
             onClick={handleDelete}
@@ -2286,7 +2286,7 @@ const SuggestedUsers = () => {
         const fetched = [];
         snap.forEach(d => {
           const u = d.data() as User;
-          if (!currentUser || (u.id !== currentUser.id && !followingIds.includes(u.id))) {
+          if (!currentUser || (u.id !== currentUser.id && !followingIds.includes(u.id) && !u.deactivated)) {
             fetched.push(u);
           }
         });
@@ -3287,7 +3287,8 @@ const SearchScreen = () => {
       const u: User[] = [];
       snap.forEach(d => {
         if (d.id !== currentUser?.id) {
-          u.push(d.data() as User);
+          const user = d.data() as User;
+          if (!user.deactivated) u.push(user);
         }
       });
       setUsers(u);
@@ -3548,18 +3549,26 @@ const UserProfileScreen = () => {
     }
   };
 
+  const [notFound, setNotFound] = useState(false);
+
   useEffect(() => {
     if (username) {
       const qUser = query(collection(db, 'users'), where('username', '==', username));
       getDocs(qUser).then(d => {
         if (!d.empty) {
           const u = d.docs[0].data() as User;
-          setUser(u);
-          setUserId(u.id);
+          if (u.deactivated && u.id !== currentUser?.id) {
+            setNotFound(true);
+          } else {
+            setUser(u);
+            setUserId(u.id);
+          }
+        } else {
+          setNotFound(true);
         }
       });
     }
-  }, [username]);
+  }, [username, currentUser?.id]);
 
   useEffect(() => {
     if (userId) {
@@ -3663,7 +3672,8 @@ const UserProfileScreen = () => {
      }
   };
 
-  if (!user) return <div className="flex-1 bg-white dark:bg-black flex items-center justify-center text-zinc-500 dark:text-zinc-500">Loading...</div>;
+  if (notFound) return <div className="flex-1 bg-white dark:bg-black flex items-center justify-center text-zinc-500 dark:text-zinc-500 font-bold uppercase tracking-widest text-sm">User Not Found</div>;
+  if (!user) return <div className="flex-1 bg-white dark:bg-black flex items-center justify-center"><DecorativeLoader /></div>;
 
   const userPosts = posts.filter(p => p.userId === userId);
 
@@ -4067,6 +4077,17 @@ export default function App() {
   const [followingIds, setFollowingIds] = useState<string[]>([]);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  const [deactivatedUserIds, setDeactivatedUserIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    const qDeactivated = query(collection(db, 'users'), where('deactivated', '==', true));
+    const unsub = onSnapshot(qDeactivated, snap => {
+      const ids: string[] = [];
+      snap.forEach(d => ids.push(d.id));
+      setDeactivatedUserIds(ids);
+    }, e => console.error("Deactivated users fetch error:", e.message));
+    return () => unsub();
+  }, []);
 
   useEffect(() => {
     if (theme === 'dark') {
@@ -4098,11 +4119,7 @@ export default function App() {
           if (userSnap.exists()) {
             const userData = userSnap.data() as User;
             if (userData.deactivated) {
-               showToast('Account deactivated');
-               auth.signOut();
-               setCurrentUser(null);
-               setIsAuthChecking(false);
-               return;
+               showToast('This account is currently deactivated. You can reactivate it in Settings.');
             }
             setCurrentUser(userData);
             if (userData.theme && (userData.theme === 'light' || userData.theme === 'dark')) {
@@ -4180,18 +4197,20 @@ export default function App() {
       const dbPosts: Post[] = [];
       snapshot.forEach(doc => {
         const data = doc.data();
-        dbPosts.push({
-          ...data,
-          id: doc.id,
-          createdAt: data.createdAt?.toDate?.() || new Date(),
-        } as Post);
+        if (!deactivatedUserIds.includes(data.userId) || currentUser?.id === data.userId) {
+          dbPosts.push({
+            ...data,
+            id: doc.id,
+            createdAt: data.createdAt?.toDate?.() || new Date(),
+          } as Post);
+        }
       });
       setPosts(dbPosts);
     }, (error) => {
       console.error("Posts fetch error:", error.message);
     });
     return unsubscribe;
-  }, []);
+  }, [deactivatedUserIds, currentUser?.id]);
 
   useEffect(() => {
     if (!currentUser) {
@@ -4434,7 +4453,7 @@ export default function App() {
           </AnimatePresence>
           
           {isAuthChecking ? (
-            <div className="flex-1 flex justify-center items-center bg-white dark:bg-black"><span className="text-zinc-500 dark:text-zinc-500 font-bold tracking-widest uppercase text-xs">Loading...</span></div>
+            <div className="flex-1 flex justify-center items-center bg-white dark:bg-black"><DecorativeLoader /></div>
           ) : (
             <BrowserRouter>
               <div className="flex-1 flex flex-col md:flex-row min-h-0 relative w-full h-full">

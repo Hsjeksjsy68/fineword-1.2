@@ -18,8 +18,8 @@ async function runTests() {
   });
 
   try {
-    await assertSucceeds(alice.firestore().doc('users/alice').update({ verificationStatus: 'pending' }));
-    console.log("Alice update verificationStatus pending succeeded");
+    await assertSucceeds(alice.firestore().doc('users/alice').update({ isDeactivated: true }));
+    console.log("Alice update isDeactivated succeeded");
   } catch (e) {
     console.error("Alice update failed", e.message);
   }

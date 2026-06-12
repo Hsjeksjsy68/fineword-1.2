@@ -57,7 +57,7 @@ export const CallManager = () => {
             }
         });
       }
-    });
+    }, e => console.error("Call receiver fetch error:", e.message));
 
     const qCallerList = query(
         collection(db, 'calls'),
@@ -105,7 +105,7 @@ export const CallManager = () => {
                deleteDoc(doc(db, 'calls', call.id)).catch(console.error);
            }
        }
-    });
+    }, e => console.error("Call fetch error:", e.message));
 
     return () => {
       unsubReceiver();

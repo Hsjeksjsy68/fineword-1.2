@@ -6,6 +6,7 @@ import { collection, onSnapshot, addDoc, serverTimestamp, setDoc, doc, updateDoc
 import { db } from './firebase';
 import { useApp, Contest, User, cn, resizeImage } from './App';
 import { formatDistanceToNow } from 'date-fns';
+import { DecorativeLoader } from './Loader';
 
 export const ContestsScreen = () => {
   const { currentUser, showToast } = useApp();
@@ -29,7 +30,7 @@ export const ContestsScreen = () => {
       const u: User[] = [];
       snap.forEach(d => u.push(d.data() as User));
       setUsers(u);
-    });
+    }, e => console.error("Users list fetch error:", e.message));
 
     const q = query(collection(db, 'contests'), orderBy('createdAt', 'desc'));
     const unsub = onSnapshot(q, (snap) => {
@@ -43,7 +44,7 @@ export const ContestsScreen = () => {
       });
       setContests(c);
       setLoading(false);
-    });
+    }, e => console.error("Contests fetch error:", e.message));
     return () => { unsub(); unsubUsers(); };
   }, []);
 
@@ -125,7 +126,7 @@ export const ContestsScreen = () => {
       <div className="flex-1 overflow-y-auto p-5 pb-32 hide-scrollbar">
         {loading ? (
           <div className="flex justify-center py-20">
-            <div className="w-8 h-8 rounded-full border-4 border-zinc-300 dark:border-zinc-700 border-t-zinc-900 dark:border-t-zinc-100 animate-spin" />
+            <DecorativeLoader />
           </div>
         ) : contests.length === 0 ? (
           <div className="text-center py-20 text-zinc-500">

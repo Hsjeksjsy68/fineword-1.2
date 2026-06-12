@@ -6,6 +6,7 @@ import { doc, onSnapshot, updateDoc, collection, query, where, getDocs, addDoc, 
 import { db } from './firebase';
 import { useApp, Contest, ContestMatch, cn, resizeImage } from './App';
 import { format } from 'date-fns';
+import { DecorativeLoader } from './Loader';
 
 export const ContestDetailScreen = () => {
   const { id } = useParams<{ id: string }>();
@@ -24,26 +25,26 @@ export const ContestDetailScreen = () => {
         setContest({ ...doc.data(), id: doc.id } as Contest);
       }
       setLoading(false);
-    });
+    }, e => console.error("Contest fetch error:", e.message));
 
     const qMatches = query(collection(db, 'contest_matches'), where('contestId', '==', id));
     const unsubMatches = onSnapshot(qMatches, snap => {
       const m: ContestMatch[] = [];
       snap.forEach(doc => m.push({ ...doc.data(), id: doc.id } as ContestMatch));
       setMatches(m);
-    });
+    }, e => console.error("Matches fetch error:", e.message));
 
     const qUsers = query(collection(db, 'users'));
     const unsubUsers = onSnapshot(qUsers, (snap) => {
       const u: any[] = [];
       snap.forEach(d => u.push(d.data()));
       setUsers(u);
-    });
+    }, e => console.error("Users fetch error:", e.message));
 
     return () => { unsubContest(); unsubMatches(); unsubUsers(); };
   }, [id]);
 
-  if (loading) return <div className="flex-1 flex items-center justify-center bg-white dark:bg-black"><div className="w-8 h-8 rounded-full border-4 border-zinc-300 border-t-zinc-900 animate-spin" /></div>;
+  if (loading) return <div className="flex-1 flex items-center justify-center bg-white dark:bg-black"><DecorativeLoader /></div>;
   if (!contest) return <div className="flex-1 flex items-center justify-center bg-white dark:bg-black text-zinc-500">Contest not found</div>;
 
   const isHost = currentUser?.id === contest.hostId;
