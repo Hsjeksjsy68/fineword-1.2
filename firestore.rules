@@ -65,15 +65,15 @@ service cloud.firestore {
     }
 
     function isValidPost(data) {
-      return data.keys().hasAll(['id', 'userId', 'imageUrl', 'caption', 'likes', 'likedBy', 'createdAt'])
+      return data.keys().hasAll(['id', 'userId', 'caption', 'likes', 'likedBy', 'createdAt'])
         && data.id is string
         && data.id.size() >= 1
         && data.id.size() <= 128
         && data.userId is string
         && data.userId.size() >= 1
         && data.userId.size() <= 128
-        && data.imageUrl is string
-        && data.imageUrl.size() <= 10485760
+        && (!('imageUrl' in data) || (data.imageUrl is string && data.imageUrl.size() <= 10485760))
+        && (!('videoUrl' in data) || (data.videoUrl is string && data.videoUrl.size() <= 15000000))
         && data.caption is string
         && data.caption.size() <= 50000
         && data.likes is number
@@ -309,7 +309,7 @@ service cloud.firestore {
                     && incoming().id == existing().id
                     && incoming().userId == existing().userId
                     && incoming().createdAt == existing().createdAt
-                    && incoming().imageUrl == existing().imageUrl
+                    && (!('imageUrl' in incoming()) || incoming().imageUrl == existing().imageUrl) && (!('videoUrl' in incoming()) || incoming().videoUrl == existing().videoUrl)
                     && (
                       incoming().diff(existing()).affectedKeys().hasOnly(['likes', 'likedBy']) ||
                       (isOwner(existing().userId) && incoming().diff(existing()).affectedKeys().hasOnly(['caption'])) ||

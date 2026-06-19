@@ -201,7 +201,8 @@ type Report = {
 type Post = {
   id: string;
   userId: string;
-  imageUrl: string;
+  imageUrl?: string;
+  videoUrl?: string;
   caption: string;
   likes: number;
   likedBy: string[];
@@ -586,14 +587,20 @@ const PostItem: React.FC<{ post: Post }> = ({ post }) => {
           )}
         </div>
       </div>
-      {(post.imageUrl || post.caption) && (
-        <div className={cn("w-full bg-zinc-100 dark:bg-zinc-950 px-0 relative", (!post.imageUrl) && "aspect-[4/3] flex items-center justify-center p-6")}>
+      {(post.imageUrl || post.videoUrl || post.caption) && (
+        <div className={cn("w-full bg-zinc-100 dark:bg-zinc-950 px-0 relative", (!post.imageUrl && !post.videoUrl) && "aspect-[4/3] flex items-center justify-center p-6")}>
           {post.imageUrl ? (
             <img 
-              src={post.imageUrl || undefined} 
+              src={post.imageUrl} 
               alt="Post" 
               className="w-full h-auto max-h-[80vh] object-cover bg-zinc-100 dark:bg-zinc-950 cursor-zoom-in" 
               onClick={() => setIsZoomed(true)}
+            />
+          ) : post.videoUrl ? (
+            <video 
+              src={post.videoUrl} 
+              controls
+              className="w-full h-auto max-h-[80vh] bg-black outline-none" 
             />
           ) : (
             <div className={cn("text-lg font-medium text-center text-zinc-900 dark:text-zinc-100", post.isItalic && "italic")}>
@@ -3300,6 +3307,10 @@ const SearchScreen = () => {
     ? posts.filter(p => p.caption?.toLowerCase().includes(queryText.toLowerCase()))
     : [];
 
+  const randomPosts = useMemo(() => {
+    return [...posts].filter(p => p.imageUrl || p.videoUrl).sort(() => Math.random() - 0.5).slice(0, 30);
+  }, [posts.length]);
+
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex-1 flex flex-col min-h-0 bg-white dark:bg-black">
       <header className="px-5 py-5 border-b border-zinc-200 dark:border-zinc-800 sticky top-0 bg-white dark:bg-black/90 backdrop-blur-md z-40 shrink-0">
@@ -3323,7 +3334,7 @@ const SearchScreen = () => {
             <div className="text-center text-zinc-500 dark:text-zinc-500 mt-10">No results found</div>
           )}
           
-          {users.length > 0 && (
+          {users.length > 0 && queryText.trim() && (
             <div className="mb-6">
               <h2 className="text-[13px] font-bold tracking-wide uppercase text-zinc-500 dark:text-zinc-500 mb-3 px-1">Accounts</h2>
               <div className="flex gap-4 overflow-x-auto hide-scrollbar pb-2">
@@ -3337,20 +3348,29 @@ const SearchScreen = () => {
             </div>
           )}
 
-          {matchedPosts.length > 0 && (
+          {(queryText.trim() ? matchedPosts : randomPosts).length > 0 && (
             <div>
-              <h2 className="text-[13px] font-bold tracking-wide uppercase text-zinc-500 dark:text-zinc-500 mb-3 px-1">Posts</h2>
+              <h2 className="text-[13px] font-bold tracking-wide uppercase text-zinc-500 dark:text-zinc-500 mb-3 px-1">
+                {queryText.trim() ? 'Posts' : 'Suggested Posts'}
+              </h2>
               <div className="grid grid-cols-3 gap-1">
-                {matchedPosts.map(post => (
+                {(queryText.trim() ? matchedPosts : randomPosts).map(post => (
                   <Link key={post.id} to={`/post/${post.id}`} className="aspect-square bg-zinc-100 dark:bg-zinc-900 relative block group">
                      {post.imageUrl ? (
                        <img src={post.imageUrl} alt="" className="w-full h-full object-cover" />
+                     ) : post.videoUrl ? (
+                       <video src={post.videoUrl} className="w-full h-full object-cover pointer-events-none" />
                      ) : (
                        <div className="w-full h-full flex items-center justify-center p-2 text-center text-[10px] break-words">
                          <span className="line-clamp-3">{post.caption}</span>
                        </div>
                      )}
                      <div className="absolute inset-0 bg-white dark:bg-transparent/0 group-hover:bg-white dark:bg-black/20 transition-colors" />
+                     {post.videoUrl && (
+                        <div className="absolute top-1 right-1 bg-black/50 rounded p-1">
+                           <Video size={12} className="text-white" />
+                        </div>
+                     )}
                   </Link>
                 ))}
               </div>
@@ -3367,6 +3387,7 @@ const CreatePostScreen = () => {
   const navigate = useNavigate();
   const [caption, setCaption] = useState('');
   const [imageUrl, setImageUrl] = useState('');
+  const [videoUrl, setVideoUrl] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const [isItalic, setIsItalic] = useState(false);
 
@@ -3374,10 +3395,31 @@ const CreatePostScreen = () => {
     const file = e.target.files?.[0];
     if (!file || !currentUser) return;
     
+    if (file.type.startsWith('video/')) {
+      if (file.size > 8 * 1024 * 1024) {
+        showToast('Video must be under 8 MB');
+        return;
+      }
+      setIsUploading(true);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+         setVideoUrl(reader.result as string);
+         setImageUrl(''); // Clear any existing image
+         setIsUploading(false);
+      };
+      reader.onerror = () => {
+         showToast('Error reading video');
+         setIsUploading(false);
+      };
+      reader.readAsDataURL(file);
+      return;
+    }
+
     setIsUploading(true);
     try {
       const resizedBase64 = await resizeImage(file, 800, 800);
       setImageUrl(resizedBase64);
+      setVideoUrl(''); // Clear any existing video
     } catch (error) {
       console.error("Upload error", error);
       showToast('Error parsing image');
@@ -3386,18 +3428,19 @@ const CreatePostScreen = () => {
   };
 
   const handleCreate = async () => {
-    if ((!caption.trim() && !imageUrl) || !currentUser) return;
+    if ((!caption.trim() && !imageUrl && !videoUrl) || !currentUser) return;
     setIsUploading(true);
     const postId = `p${Date.now()}`;
     const newPost = {
       id: postId,
       userId: currentUser.id,
       imageUrl,
+      videoUrl,
       caption: caption.trim(),
       likes: 0,
       likedBy: [],
       createdAt: serverTimestamp(),
-      isItalic: !imageUrl ? isItalic : false,
+      isItalic: (!imageUrl && !videoUrl) ? isItalic : false,
     };
     try {
       await setDoc(doc(db, 'posts', postId), newPost);
@@ -3408,7 +3451,7 @@ const CreatePostScreen = () => {
     }
   };
 
-  const canSubmit = (!!imageUrl || !!caption.trim()) && !isUploading;
+  const canSubmit = (!!imageUrl || !!videoUrl || !!caption.trim()) && !isUploading;
 
   return (
     <motion.div initial={{ y: 50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="flex-1 flex flex-col min-h-0 bg-white dark:bg-black">
@@ -3443,12 +3486,12 @@ const CreatePostScreen = () => {
           )}
         </div>
 
-        {!imageUrl ? (
+        {!imageUrl && !videoUrl ? (
           <div className="flex-1 flex items-start justify-center">
             <label className="flex flex-col w-full aspect-video bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors rounded-2xl items-center justify-center gap-4 cursor-pointer border-dashed border-2">
               <input 
                 type="file"
-                accept="image/*"
+                accept="image/*,video/*"
                 className="hidden"
                 onChange={handleUpload}
                 disabled={isUploading}
@@ -3458,7 +3501,7 @@ const CreatePostScreen = () => {
               ) : (
                  <>
                    <ImageIcon size={32} className="text-zinc-500 dark:text-zinc-500 dark:text-zinc-400"/>
-                   <span className="text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 font-medium tracking-tight text-[14px]">Attach Photo (Optional)</span>
+                   <span className="text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 font-medium tracking-tight text-[14px]">Attach Photo or Video (Optional)</span>
                  </>
               )}
             </label>
@@ -3466,12 +3509,16 @@ const CreatePostScreen = () => {
         ) : (
           <div className="flex flex-col gap-4">
              <div className="w-full bg-zinc-100 dark:bg-zinc-900 relative rounded-2xl overflow-hidden shadow-sm border border-zinc-200 dark:border-zinc-800">
-               <img src={imageUrl || undefined} alt="Preview" className="w-full h-auto object-cover max-h-[60vh] mx-auto" />
+               {imageUrl ? (
+                 <img src={imageUrl} alt="Preview" className="w-full h-auto object-cover max-h-[60vh] mx-auto" />
+               ) : (
+                 <video src={videoUrl} controls className="w-full h-auto max-h-[60vh] mx-auto outline-none" />
+               )}
                <label className="absolute bottom-4 right-4 bg-white dark:bg-black/70 backdrop-blur-md px-3 py-1.5 rounded-full text-black dark:text-white text-[12px] font-bold cursor-pointer hover:bg-white dark:hover:bg-zinc-800 transition-colors flex items-center gap-2 border border-zinc-200 dark:border-zinc-800 shadow-sm">
-                  <ImageIcon size={14} /> Change Photo
-                  <input type="file" accept="image/*" className="hidden" onChange={handleUpload} disabled={isUploading} />
+                  <ImageIcon size={14} /> Change Media
+                  <input type="file" accept="image/*,video/*" className="hidden" onChange={handleUpload} disabled={isUploading} />
                </label>
-               <button onClick={() => setImageUrl('')} className="absolute top-4 right-4 bg-white dark:bg-black/70 backdrop-blur-md w-8 h-8 rounded-full flex items-center justify-center text-black dark:text-white border border-zinc-200 dark:border-zinc-800 shadow-sm hover:scale-105 transition-transform flex-shrink-0">
+               <button onClick={() => { setImageUrl(''); setVideoUrl(''); }} className="absolute top-4 right-4 bg-white dark:bg-black/70 backdrop-blur-md w-8 h-8 rounded-full flex items-center justify-center text-black dark:text-white border border-zinc-200 dark:border-zinc-800 shadow-sm hover:scale-105 transition-transform flex-shrink-0">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                </button>
              </div>
@@ -3748,6 +3795,14 @@ const UserProfileScreen = () => {
                     <img src={post.imageUrl || undefined} alt="" className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                     <div className="absolute inset-0 bg-transparent group-hover:bg-black/10 dark:group-hover:bg-white/10 transition-colors" />
                   </>
+                ) : post.videoUrl ? (
+                  <>
+                    <video src={post.videoUrl} className="absolute inset-0 w-full h-full object-cover pointer-events-none group-hover:scale-105 transition-transform duration-500" />
+                    <div className="absolute inset-0 bg-transparent group-hover:bg-black/10 dark:group-hover:bg-white/10 transition-colors" />
+                    <div className="absolute top-1 right-1 bg-black/50 rounded p-1">
+                       <Video size={12} className="text-white" />
+                    </div>
+                  </>
                 ) : (
                   <div className={cn("absolute inset-0 flex items-center justify-center p-2 text-center text-[10px] sm:text-xs font-medium overflow-hidden break-words", post.isItalic && "italic")}>{formatTextHighlight(post.caption)}</div>
                 )}
@@ -3905,6 +3960,14 @@ const ProfileScreen = () => {
                   <>
                     <img src={post.imageUrl || undefined} alt="" className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                     <div className="absolute inset-0 bg-transparent group-hover:bg-black/10 dark:group-hover:bg-white/10 transition-colors" />
+                  </>
+                ) : post.videoUrl ? (
+                  <>
+                    <video src={post.videoUrl} className="absolute inset-0 w-full h-full object-cover pointer-events-none group-hover:scale-105 transition-transform duration-500" />
+                    <div className="absolute inset-0 bg-transparent group-hover:bg-black/10 dark:group-hover:bg-white/10 transition-colors" />
+                    <div className="absolute top-1 right-1 bg-black/50 rounded p-1">
+                       <Video size={12} className="text-white" />
+                    </div>
                   </>
                 ) : (
                   <div className={cn("absolute inset-0 flex items-center justify-center p-2 text-center text-[10px] sm:text-xs font-medium overflow-hidden break-words", post.isItalic && "italic")}>{formatTextHighlight(post.caption)}</div>
