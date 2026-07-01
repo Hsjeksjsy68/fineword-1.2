@@ -53,6 +53,8 @@ service cloud.firestore {
         && (data.get('bio', '').size() <= 500)
         // theme check (optional)
         && (!('theme' in data) || data.theme in ['light', 'dark'])
+        // coverPhoto check (optional)
+        && (!('coverPhoto' in data) || (data.coverPhoto is string && data.coverPhoto.size() <= 10485760))
         // verification checks
         && (!('isVerified' in data) || data.isVerified is bool)
         && (!('verificationStatus' in data) || data.verificationStatus in ['none', 'pending', 'accepted', 'rejected'])
@@ -194,8 +196,7 @@ service cloud.firestore {
                     && isValidId(userId)
                     && isValidUser(incoming())
                     && incoming().id == userId
-                    && incoming().keys().hasAll(['id', 'username', 'name', 'avatar', 'bio'])
-                    && incoming().keys().size() <= 6;
+                    && incoming().keys().hasAll(['id', 'username', 'name', 'avatar', 'bio']);
 
       allow update: if isAdmin() || (isSignedIn() && incoming().diff(existing()).affectedKeys().hasOnly(['verificationStatus', 'isVerified', 'verifiedUntil'])) || (isSignedIn() && incoming().diff(existing()).affectedKeys().hasOnly(['bannedUntil'])) || (isSignedIn() && incoming().diff(existing()).affectedKeys().hasOnly(['deactivated'])) || (isSignedIn() && incoming().diff(existing()).affectedKeys().hasOnly(['isVerified', 'verificationStatus', 'verifiedUntil', 'deactivated'])) || (isValidId(userId)
                     && isValidUser(incoming())
@@ -203,7 +204,7 @@ service cloud.firestore {
                     && (
                       (
                         isOwner(userId)
-                        && incoming().diff(existing()).affectedKeys().hasOnly(['username', 'name', 'avatar', 'bio', 'theme', 'verificationStatus', 'verificationData', 'deactivated', 'hideBadges', 'activeBadgeId', 'lastActive'])
+                        && incoming().diff(existing()).affectedKeys().hasOnly(['username', 'name', 'avatar', 'coverPhoto', 'bio', 'theme', 'verificationStatus', 'verificationData', 'deactivated', 'hideBadges', 'activeBadgeId', 'lastActive'])
                         && (!('verificationStatus' in incoming().diff(existing()).affectedKeys()) || incoming().verificationStatus in ['pending', 'none'])
                       )
                       ||
@@ -413,6 +414,13 @@ service cloud.firestore {
                       && incoming().diff(existing()).affectedKeys().hasOnly(['isDeleted', 'text', 'imageUrl', 'videoUrl'])
                       && incoming().isDeleted == true;
       }
+    }
+
+    
+    match /video_chunks/{chunkId} {
+      allow read: if true;
+      allow create: if isSignedIn();
+      allow delete: if isSignedIn();
     }
 
     match /contests/{contestId} {

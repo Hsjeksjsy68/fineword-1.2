@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { BrowserRouter, Routes, Route, Link, useNavigate, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { Home, MessageCircle, User as UserIcon, Heart, Send, PlusSquare, Image as ImageIcon, ChevronLeft, MoreHorizontal, LogOut, Search, Moon, Sun, Share2, Music, Type, Palette, Check, BarChart2, X, Trophy, Settings, Phone, Video, PhoneOff, Mic, MicOff, Camera, CameraOff } from 'lucide-react';
 import { formatDistanceToNow, format, isSameDay } from 'date-fns';
@@ -135,6 +135,7 @@ export type User = {
   name: string;
   avatar: string;
   bio: string;
+  coverPhoto?: string;
   theme?: 'light' | 'dark';
   isVerified?: boolean;
   verifiedUntil?: Date | any;
@@ -551,7 +552,14 @@ const PostItem: React.FC<{ post: Post }> = ({ post }) => {
   const activeBadge = user.activeBadgeId && !user.hideBadges && user.badges ? user.badges.find(b => b.id === user.activeBadgeId) : null;
 
   return (
-    <div className="mb-6 flex flex-col gap-3 relative bg-white dark:bg-zinc-950 sm:border border-zinc-200 dark:border-zinc-800 sm:rounded-2xl pb-4">
+    <motion.div 
+      layout
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.9 }}
+      transition={{ duration: 0.3 }}
+      className="mb-6 flex flex-col gap-3 relative bg-white dark:bg-zinc-950 sm:border border-zinc-200 dark:border-zinc-800 sm:rounded-2xl pb-4"
+    >
       <div className="flex items-center gap-3 px-5 pt-4">
         <Link to={`/${user.username}`} className="flex items-center gap-3 flex-1 overflow-hidden group">
           <img src={user.avatar || undefined} alt={user.username} className="w-10 h-10 rounded-full bg-zinc-200 dark:bg-zinc-800 p-0.5 object-cover" />
@@ -597,8 +605,9 @@ const PostItem: React.FC<{ post: Post }> = ({ post }) => {
               onClick={() => setIsZoomed(true)}
             />
           ) : post.videoUrl ? (
-            <video 
-              src={post.videoUrl} 
+            <ChunkedVideoPlayer 
+              videoUrl={post.videoUrl}
+              postId={post.id}
               controls
               className="w-full h-auto max-h-[80vh] bg-black outline-none" 
             />
@@ -680,7 +689,7 @@ const PostItem: React.FC<{ post: Post }> = ({ post }) => {
           {formatDistanceToNow(post.createdAt, { addSuffix: true })}
         </p>
       </div>
-    </div>
+    </motion.div>
   );
 };
 
@@ -779,21 +788,23 @@ const CommentsScreen = () => {
           }
           return null;
         })()}
-        {comments.map((cm) => {
-          const u = users[cm.userId] || { username: '...', avatar: '', name: '...' };
-          return (
-            <div key={cm.id} className="flex gap-3">
-               <img src={u.avatar || undefined} alt="" className="w-8 h-8 rounded-full bg-zinc-200 dark:bg-zinc-800" />
-               <div className="flex-1">
-                 <div className="flex items-baseline gap-2">
-                   <span className="font-bold text-[13px] text-zinc-900 dark:text-zinc-100">{u.username}</span>
-                   <span className="text-[11px] text-zinc-500 dark:text-zinc-500">{formatDistanceToNow(cm.createdAt)}</span>
+        <AnimatePresence mode="popLayout">
+          {comments.map((cm) => {
+            const u = users[cm.userId] || { username: '...', avatar: '', name: '...' };
+            return (
+              <motion.div layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }} key={cm.id} className="flex gap-3">
+                 <img src={u.avatar || undefined} alt="" className="w-8 h-8 rounded-full bg-zinc-200 dark:bg-zinc-800" />
+                 <div className="flex-1">
+                   <div className="flex items-baseline gap-2">
+                     <span className="font-bold text-[13px] text-zinc-900 dark:text-zinc-100">{u.username}</span>
+                     <span className="text-[11px] text-zinc-500 dark:text-zinc-500">{formatDistanceToNow(cm.createdAt)}</span>
+                   </div>
+                   <p className="text-[13px] text-zinc-700 dark:text-zinc-300 mt-1">{formatTextHighlight(cm.text)}</p>
                  </div>
-                 <p className="text-[13px] text-zinc-700 dark:text-zinc-300 mt-1">{formatTextHighlight(cm.text)}</p>
-               </div>
-            </div>
-          )
-        })}
+              </motion.div>
+            )
+          })}
+        </AnimatePresence>
         {comments.length === 0 && <div className="text-zinc-500 dark:text-zinc-500 text-center mt-10">No comments yet</div>}
       </div>
 
@@ -1364,6 +1375,7 @@ const EditProfileScreen = () => {
   const [username, setUsername] = useState(currentUser?.username || '');
   const [bio, setBio] = useState(currentUser?.bio || '');
   const [avatar, setAvatar] = useState(currentUser?.avatar || '');
+  const [coverPhoto, setCoverPhoto] = useState(currentUser?.coverPhoto || '');
   const [hideBadges, setHideBadges] = useState(currentUser?.hideBadges || false);
   const [activeBadgeId, setActiveBadgeId] = useState(currentUser?.activeBadgeId || '');
   const [isUploading, setIsUploading] = useState(false);
@@ -1394,6 +1406,7 @@ const EditProfileScreen = () => {
         username: finalUsername, 
         bio, 
         avatar, 
+        coverPhoto,
         hideBadges, 
         activeBadgeId: activeBadgeId || null
       });
@@ -1421,6 +1434,21 @@ const EditProfileScreen = () => {
     setIsUploading(false);
   };
 
+  const handleCoverPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !currentUser) return;
+    
+    setIsUploading(true);
+    try {
+      const resizedBase64 = await resizeImage(file, 1200, 600);
+      setCoverPhoto(resizedBase64);
+    } catch (error) {
+      console.error("Cover photo resize error", error);
+      showToast('Error resizing cover photo');
+    }
+    setIsUploading(false);
+  };
+
   return (
     <motion.div initial={{ x: 50, opacity: 0 }} animate={{ x: 0, opacity: 1 }} className="flex-1 flex flex-col min-h-0 bg-white dark:bg-black absolute inset-0 z-50">
       <header className="flex items-center justify-between px-5 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black/90 backdrop-blur-md sticky top-0 z-10 shrink-0">
@@ -1430,12 +1458,29 @@ const EditProfileScreen = () => {
       </header>
 
       <div className="flex-1 overflow-y-auto px-5 py-6 flex flex-col gap-6">
-        <div className="flex flex-col items-center mb-4">
-          <img src={avatar || undefined} alt="Profile" className={cn("w-24 h-24 rounded-full bg-zinc-200 dark:bg-zinc-800 object-cover", isUploading && "opacity-50 animate-pulse")} />
-          <label className="text-indigo-400 font-bold text-[13px] mt-4 cursor-pointer hover:text-indigo-300">
-            {isUploading ? 'Uploading...' : 'Change Photo'}
-            <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} disabled={isUploading} />
-          </label>
+        <div className="flex flex-col gap-4">
+          <div className="relative w-full h-32 sm:h-48 bg-zinc-200 dark:bg-zinc-800 rounded-xl overflow-hidden group">
+            {coverPhoto ? (
+              <img src={coverPhoto} alt="Cover" className={cn("w-full h-full object-cover", isUploading && "opacity-50 animate-pulse")} />
+            ) : (
+              <div className="w-full h-full flex flex-col items-center justify-center text-zinc-500">
+                <ImageIcon size={32} className="mb-2 opacity-50" />
+                <span className="text-xs uppercase font-bold tracking-wider">No Cover Photo</span>
+              </div>
+            )}
+            <label className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer text-white text-xs uppercase font-bold tracking-wider">
+              {isUploading ? 'Uploading...' : 'Change Cover'}
+              <input type="file" accept="image/*" className="hidden" onChange={handleCoverPhotoUpload} disabled={isUploading} />
+            </label>
+          </div>
+          
+          <div className="flex flex-col items-center -mt-12 sm:-mt-16 relative z-10">
+            <img src={avatar || undefined} alt="Profile" className={cn("w-24 h-24 rounded-full bg-zinc-200 dark:bg-zinc-800 object-cover ring-4 ring-white dark:ring-black", isUploading && "opacity-50 animate-pulse")} />
+            <label className="text-indigo-400 font-bold text-[13px] mt-3 cursor-pointer hover:text-indigo-300 bg-white/80 dark:bg-black/80 backdrop-blur px-3 py-1 rounded-full shadow-sm">
+              {isUploading ? 'Uploading...' : 'Change Avatar'}
+              <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} disabled={isUploading} />
+            </label>
+          </div>
         </div>
 
         <div className="flex flex-col gap-2">
@@ -2411,15 +2456,17 @@ const FeedScreen = () => {
       <div className="flex-1 overflow-y-auto divide-y divide-zinc-900/50 pb-6">
         <StoriesBar />
         <SuggestedUsers />
-        {displayPosts.length === 0 ? (
-          <div className="flex flex-col items-center justify-center p-10 h-64 text-center">
-            <p className="text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 font-medium">No posts here yet.</p>
-          </div>
-        ) : (
-          displayPosts.map((post) => (
-            <PostItem key={post.id} post={post} />
-          ))
-        )}
+        <AnimatePresence mode="popLayout">
+          {displayPosts.length === 0 ? (
+            <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col items-center justify-center p-10 h-64 text-center">
+              <p className="text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 font-medium">No posts here yet.</p>
+            </motion.div>
+          ) : (
+            displayPosts.map((post) => (
+              <PostItem key={post.id} post={post} />
+            ))
+          )}
+        </AnimatePresence>
       </div>
     </motion.div>
   );
@@ -2965,44 +3012,45 @@ const ChatRoomScreen = () => {
       )}
       
       <div className="flex-1 overflow-y-auto px-4 pt-6 pb-6 flex flex-col" style={chat.theme ? { backgroundColor: chat.theme } : {}}>
-        {chatMessages.filter(msg => !searchQuery || msg.text.toLowerCase().includes(searchQuery.toLowerCase())).map((msg, index, filteredArray) => {
-          const isMe = msg.senderId === currentUser?.id;
-          const prevMsg = filteredArray[index - 1];
-          const nextMsg = filteredArray[index + 1];
-          
-          const isSameSenderAsPrev = prevMsg && prevMsg.senderId === msg.senderId;
-          const isSameSenderAsNext = nextMsg && nextMsg.senderId === msg.senderId;
-          
-          const showDateHeader = !prevMsg || !isSameDay(msg.createdAt, prevMsg.createdAt);
-          const isSystem = msg.senderId === 'system';
-          
-          if (isSystem) {
-             const isVideo = msg.text.toLowerCase().includes('video');
-             return (
-               <React.Fragment key={msg.id}>
-                 {showDateHeader && (
-                   <div className="flex justify-center my-6">
-                     <span className="text-[11px] font-bold text-zinc-500 dark:text-zinc-500 uppercase tracking-widest bg-zinc-100 dark:bg-zinc-900 px-3 py-1 rounded-full">
-                       {format(msg.createdAt, 'MMM d, yyyy')}
-                     </span>
+        <AnimatePresence initial={false}>
+          {chatMessages.filter(msg => !searchQuery || msg.text.toLowerCase().includes(searchQuery.toLowerCase())).map((msg, index, filteredArray) => {
+            const isMe = msg.senderId === currentUser?.id;
+            const prevMsg = filteredArray[index - 1];
+            const nextMsg = filteredArray[index + 1];
+            
+            const isSameSenderAsPrev = prevMsg && prevMsg.senderId === msg.senderId;
+            const isSameSenderAsNext = nextMsg && nextMsg.senderId === msg.senderId;
+            
+            const showDateHeader = !prevMsg || !isSameDay(msg.createdAt, prevMsg.createdAt);
+            const isSystem = msg.senderId === 'system';
+            
+            if (isSystem) {
+               const isVideo = msg.text.toLowerCase().includes('video');
+               return (
+                 <motion.div layout initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="flex flex-col" key={msg.id}>
+                   {showDateHeader && (
+                     <div className="flex justify-center my-6">
+                       <span className="text-[11px] font-bold text-zinc-500 dark:text-zinc-500 uppercase tracking-widest bg-zinc-100 dark:bg-zinc-900 px-3 py-1 rounded-full">
+                         {format(msg.createdAt, 'MMM d, yyyy')}
+                       </span>
+                     </div>
+                   )}
+                   <div className="flex justify-center my-2">
+                      <span className="flex items-center gap-2 px-4 py-1.5 bg-zinc-100 dark:bg-zinc-900 rounded-full text-xs font-semibold tracking-wide text-zinc-500 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-800">
+                        {isVideo ? <Video size={14} className="text-zinc-400" /> : <Phone size={14} className="text-zinc-400" />}
+                        {msg.text}
+                      </span>
                    </div>
-                 )}
-                 <div className="flex justify-center my-2">
-                    <span className="flex items-center gap-2 px-4 py-1.5 bg-zinc-100 dark:bg-zinc-900 rounded-full text-xs font-semibold tracking-wide text-zinc-500 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-800">
-                      {isVideo ? <Video size={14} className="text-zinc-400" /> : <Phone size={14} className="text-zinc-400" />}
-                      {msg.text}
-                    </span>
-                 </div>
-               </React.Fragment>
-             );
-          }
+                 </motion.div>
+               );
+            }
 
-          const sender = isMe ? currentUser : chatUsers[msg.senderId];
-          const needsAvatarSpace = !isMe && !isSameSenderAsNext;
-          const senderName = sender ? (chat.nicknames?.[sender.id] || sender.name) : 'Unknown';
+            const sender = isMe ? currentUser : chatUsers[msg.senderId];
+            const needsAvatarSpace = !isMe && !isSameSenderAsNext;
+            const senderName = sender ? (chat.nicknames?.[sender.id] || sender.name) : 'Unknown';
 
-          return (
-            <React.Fragment key={msg.id}>
+            return (
+              <motion.div layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col" key={msg.id}>
               {showDateHeader && (
                 <div className="flex justify-center my-6">
                   <span className="text-[11px] font-bold text-zinc-500 dark:text-zinc-500 uppercase tracking-widest bg-zinc-100 dark:bg-zinc-900 px-3 py-1 rounded-full">
@@ -3049,7 +3097,7 @@ const ChatRoomScreen = () => {
                     msg.isDeleted && "opacity-60 italic bg-zinc-100 border-none text-zinc-500 dark:text-zinc-500"
                   )}>
                     {msg.videoUrl ? (
-                      <video src={msg.videoUrl} controls className="rounded-xl w-full max-w-[240px] max-h-[300px] object-cover" />
+                      <ChunkedVideoPlayer videoUrl={msg.videoUrl} postId={msg.id} controls className="rounded-xl w-full max-w-[240px] max-h-[300px] object-cover" />
                     ) : msg.imageUrl ? (
                       <img src={msg.imageUrl} className="rounded-xl w-full max-w-[240px] max-h-[300px] object-cover" />
                     ) : (
@@ -3071,9 +3119,10 @@ const ChatRoomScreen = () => {
                   </div>
                 </div>
               </div>
-            </React.Fragment>
+            </motion.div>
           );
         })}
+        </AnimatePresence>
         <div ref={messagesEndRef} className="pt-2" />
       </div>
 
@@ -3098,8 +3147,8 @@ const ChatRoomScreen = () => {
                       sendMessage(chatId, '', dataUrl);
                     } else if (f.type.startsWith('video/')) {
                       // Basic file to base64 for video
-                      if (f.size > 5 * 1024 * 1024) { 
-                        alert("Video must be under 5MB for the preview environment.");
+                      if (f.size > 8 * 1024 * 1024) { 
+                        alert("Video must be under 8MB for the preview environment.");
                         return;
                       }
                       const reader = new FileReader();
@@ -3247,7 +3296,7 @@ const ChatRoomScreen = () => {
                  {chatMessages.filter(m => m.imageUrl || m.videoUrl).map(m => (
                    <div key={m.id} className="aspect-square bg-zinc-100 dark:bg-zinc-900 overflow-hidden relative">
                      {m.videoUrl ? (
-                        <video src={m.videoUrl} className="w-full h-full object-cover" />
+                        <ChunkedVideoPlayer videoUrl={m.videoUrl} postId={m.id} className="w-full h-full object-cover" />
                      ) : (
                         <img src={m.imageUrl} className="w-full h-full object-cover" />
                      )}
@@ -3359,7 +3408,7 @@ const SearchScreen = () => {
                      {post.imageUrl ? (
                        <img src={post.imageUrl} alt="" className="w-full h-full object-cover" />
                      ) : post.videoUrl ? (
-                       <video src={post.videoUrl} className="w-full h-full object-cover pointer-events-none" />
+                       <ChunkedVideoPlayer videoUrl={post.videoUrl} postId={post.id} className="w-full h-full object-cover pointer-events-none" />
                      ) : (
                        <div className="w-full h-full flex items-center justify-center p-2 text-center text-[10px] break-words">
                          <span className="line-clamp-3">{post.caption}</span>
@@ -3380,6 +3429,35 @@ const SearchScreen = () => {
       </div>
     </motion.div>
   );
+};
+
+const ChunkedVideoPlayer = ({ videoUrl, postId, className, controls = false }: { videoUrl: string, postId: string, className?: string, controls?: boolean }) => {
+  const [videoSrc, setVideoSrc] = useState<string>(videoUrl === 'chunked' ? '' : videoUrl);
+  
+  useEffect(() => {
+    if (videoUrl !== 'chunked') {
+      setVideoSrc(videoUrl);
+      return;
+    }
+    const fetchChunks = async () => {
+      try {
+        const q = query(collection(db, 'video_chunks'), where('postId', '==', postId));
+        const snap = await getDocs(q);
+        const chunks = snap.docs.map(d => d.data()).sort((a, b) => a.chunkIndex - b.chunkIndex);
+        const fullData = chunks.map(c => c.data).join('');
+        setVideoSrc(fullData);
+      } catch (e) {
+        console.error("Error loading chunked video", e);
+      }
+    };
+    fetchChunks();
+  }, [postId, videoUrl]);
+
+  if (!videoSrc) {
+    return <div className={`flex items-center justify-center bg-black/10 animate-pulse ${className}`}><Video className="text-white/50" /></div>;
+  }
+  
+  return <video src={videoSrc} controls={controls} className={className} />;
 };
 
 const CreatePostScreen = () => {
@@ -3431,24 +3509,47 @@ const CreatePostScreen = () => {
     if ((!caption.trim() && !imageUrl && !videoUrl) || !currentUser) return;
     setIsUploading(true);
     const postId = `p${Date.now()}`;
-    const newPost = {
-      id: postId,
-      userId: currentUser.id,
-      imageUrl,
-      videoUrl,
-      caption: caption.trim(),
-      likes: 0,
-      likedBy: [],
-      createdAt: serverTimestamp(),
-      isItalic: (!imageUrl && !videoUrl) ? isItalic : false,
-    };
+    
+    let finalVideoUrl = videoUrl;
+    
     try {
+      if (videoUrl && videoUrl.length > 500000) {
+        const CHUNK_SIZE = 800000;
+        const chunks = [];
+        for (let i = 0; i < videoUrl.length; i += CHUNK_SIZE) {
+          chunks.push(videoUrl.slice(i, i + CHUNK_SIZE));
+        }
+        
+        await Promise.all(chunks.map((chunkStr, idx) => {
+          return setDoc(doc(collection(db, 'video_chunks')), {
+            postId,
+            chunkIndex: idx,
+            data: chunkStr,
+            createdAt: serverTimestamp()
+          });
+        }));
+        finalVideoUrl = 'chunked';
+      }
+
+      const newPost = {
+        id: postId,
+        userId: currentUser.id,
+        imageUrl,
+        videoUrl: finalVideoUrl,
+        caption: caption.trim(),
+        likes: 0,
+        likedBy: [],
+        createdAt: serverTimestamp(),
+        isItalic: (!imageUrl && !videoUrl) ? isItalic : false,
+      };
+
       await setDoc(doc(db, 'posts', postId), newPost);
       navigate('/');
     } catch (e) {
       console.error(e);
       showToast('Error creating post');
     }
+    setIsUploading(false);
   };
 
   const canSubmit = (!!imageUrl || !!videoUrl || !!caption.trim()) && !isUploading;
@@ -3741,10 +3842,15 @@ const UserProfileScreen = () => {
       </header>
       
       <div className="flex-1 overflow-y-auto">
+        {user.coverPhoto && (
+          <div className="w-full h-32 sm:h-48 relative">
+            <img src={user.coverPhoto} alt="Cover" className="w-full h-full object-cover" />
+          </div>
+        )}
         <div className="p-6 flex items-center justify-between">
           <div className="relative shrink-0">
-             <img src={user.avatar || undefined} alt="Profile" className="w-20 sm:w-24 h-20 sm:h-24 rounded-full bg-zinc-200 dark:bg-zinc-800 object-cover" />
-             <div className="absolute inset-0 rounded-full ring-2 ring-indigo-500/30 ring-offset-4 ring-offset-white dark:ring-offset-black"></div>
+             <img src={user.avatar || undefined} alt="Profile" className="w-20 sm:w-24 h-20 sm:h-24 rounded-full bg-zinc-200 dark:bg-zinc-800 object-cover relative z-10" style={{ marginTop: user.coverPhoto ? '-4rem' : '0' }} />
+             <div className="absolute inset-0 rounded-full ring-2 ring-indigo-500/30 ring-offset-4 ring-offset-white dark:ring-offset-black z-10" style={{ marginTop: user.coverPhoto ? '-4rem' : '0' }}></div>
           </div>
           <div className="flex gap-4 sm:gap-7 pr-2 text-center">
             <div className="flex flex-col items-center"><span className="font-bold text-lg sm:text-xl">{userPosts.length}</span><span className="text-[10px] text-zinc-500 dark:text-zinc-500 uppercase tracking-widest mt-1">Posts</span></div>
@@ -3782,33 +3888,35 @@ const UserProfileScreen = () => {
         </div>
 
         <div className="grid grid-cols-3 gap-0.5 sm:gap-1 p-0.5 sm:px-1 bg-white dark:bg-black">
-          {userPosts.length === 0 ? (
-            <div className="col-span-3 py-16 flex flex-col items-center justify-center text-zinc-500 dark:text-zinc-500 bg-zinc-100 dark:bg-zinc-900/30 rounded-xl m-4 border border-zinc-200 dark:border-zinc-800/50 block">
-              <ImageIcon size={48} className="mb-4 opacity-40" />
-              <p className="text-[13px] font-medium">No posts compiled yet</p>
-            </div>
-          ) : (
-            userPosts.map(post => (
-              <div key={post.id} className="pt-[100%] bg-zinc-100 dark:bg-zinc-900 relative group cursor-pointer overflow-hidden border border-zinc-200 dark:border-zinc-800" onClick={() => navigate(`/post/${post.id}/comments`)}>
-                {post.imageUrl ? (
-                  <>
-                    <img src={post.imageUrl || undefined} alt="" className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                    <div className="absolute inset-0 bg-transparent group-hover:bg-black/10 dark:group-hover:bg-white/10 transition-colors" />
-                  </>
-                ) : post.videoUrl ? (
-                  <>
-                    <video src={post.videoUrl} className="absolute inset-0 w-full h-full object-cover pointer-events-none group-hover:scale-105 transition-transform duration-500" />
-                    <div className="absolute inset-0 bg-transparent group-hover:bg-black/10 dark:group-hover:bg-white/10 transition-colors" />
-                    <div className="absolute top-1 right-1 bg-black/50 rounded p-1">
-                       <Video size={12} className="text-white" />
-                    </div>
-                  </>
-                ) : (
-                  <div className={cn("absolute inset-0 flex items-center justify-center p-2 text-center text-[10px] sm:text-xs font-medium overflow-hidden break-words", post.isItalic && "italic")}>{formatTextHighlight(post.caption)}</div>
-                )}
-              </div>
-            ))
-          )}
+          <AnimatePresence mode="popLayout">
+            {userPosts.length === 0 ? (
+              <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="col-span-3 py-16 flex flex-col items-center justify-center text-zinc-500 dark:text-zinc-500 bg-zinc-100 dark:bg-zinc-900/30 rounded-xl m-4 border border-zinc-200 dark:border-zinc-800/50 block">
+                <ImageIcon size={48} className="mb-4 opacity-40" />
+                <p className="text-[13px] font-medium">No posts compiled yet</p>
+              </motion.div>
+            ) : (
+              userPosts.map(post => (
+                <motion.div layout initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} transition={{ duration: 0.3 }} key={post.id} className="pt-[100%] bg-zinc-100 dark:bg-zinc-900 relative group cursor-pointer overflow-hidden border border-zinc-200 dark:border-zinc-800" onClick={() => navigate(`/post/${post.id}/comments`)}>
+                  {post.imageUrl ? (
+                    <>
+                      <img src={post.imageUrl || undefined} alt="" className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                      <div className="absolute inset-0 bg-transparent group-hover:bg-black/10 dark:group-hover:bg-white/10 transition-colors" />
+                    </>
+                  ) : post.videoUrl ? (
+                    <>
+                      <ChunkedVideoPlayer videoUrl={post.videoUrl} postId={post.id} className="absolute inset-0 w-full h-full object-cover pointer-events-none group-hover:scale-105 transition-transform duration-500" />
+                      <div className="absolute inset-0 bg-transparent group-hover:bg-black/10 dark:group-hover:bg-white/10 transition-colors" />
+                      <div className="absolute top-1 right-1 bg-black/50 rounded p-1">
+                         <Video size={12} className="text-white" />
+                      </div>
+                    </>
+                  ) : (
+                    <div className={cn("absolute inset-0 flex items-center justify-center p-2 text-center text-[10px] sm:text-xs font-medium overflow-hidden break-words", post.isItalic && "italic")}>{formatTextHighlight(post.caption)}</div>
+                  )}
+                </motion.div>
+              ))
+            )}
+          </AnimatePresence>
         </div>
       </div>
       <FollowListModal isOpen={modalType !== null} onClose={() => setModalType(null)} title={modalType === 'followers' ? 'Followers' : 'Following'} users={modalUsers} />
@@ -3905,10 +4013,15 @@ const ProfileScreen = () => {
       </header>
       
       <div className="flex-1 overflow-y-auto">
+        {currentUser.coverPhoto && (
+          <div className="w-full h-32 sm:h-48 relative">
+            <img src={currentUser.coverPhoto} alt="Cover" className="w-full h-full object-cover" />
+          </div>
+        )}
         <div className="p-6 flex items-center justify-between">
           <div className="relative shrink-0">
-             <img src={currentUser.avatar || undefined} alt="Profile" className="w-20 sm:w-24 h-20 sm:h-24 rounded-full bg-zinc-200 dark:bg-zinc-800 object-cover" />
-             <div className="absolute inset-0 rounded-full ring-2 ring-indigo-500/30 ring-offset-4 ring-offset-white dark:ring-offset-black"></div>
+             <img src={currentUser.avatar || undefined} alt="Profile" className="w-20 sm:w-24 h-20 sm:h-24 rounded-full bg-zinc-200 dark:bg-zinc-800 object-cover relative z-10" style={{ marginTop: currentUser.coverPhoto ? '-4rem' : '0' }} />
+             <div className="absolute inset-0 rounded-full ring-2 ring-indigo-500/30 ring-offset-4 ring-offset-white dark:ring-offset-black z-10" style={{ marginTop: currentUser.coverPhoto ? '-4rem' : '0' }}></div>
           </div>
           <div className="flex gap-4 sm:gap-7 pr-2 text-center">
             <div className="flex flex-col items-center"><span className="font-bold text-lg sm:text-xl">{myPosts.length}</span><span className="text-[10px] text-zinc-500 dark:text-zinc-500 uppercase tracking-widest mt-1">Posts</span></div>
@@ -3948,33 +4061,35 @@ const ProfileScreen = () => {
         </div>
 
         <div className="grid grid-cols-3 gap-0.5 sm:gap-1 p-0.5 sm:px-1 bg-white dark:bg-black">
-          {myPosts.length === 0 ? (
-            <div className="col-span-3 py-16 flex flex-col items-center justify-center text-zinc-500 dark:text-zinc-500 bg-zinc-100 dark:bg-zinc-900/30 rounded-xl m-4 border border-zinc-200 dark:border-zinc-800/50 block">
-              <ImageIcon size={48} className="mb-4 opacity-40" />
-              <p className="text-[13px] font-medium">No posts compiled yet</p>
-            </div>
-          ) : (
-            myPosts.map(post => (
-              <div key={post.id} className="pt-[100%] bg-zinc-100 dark:bg-zinc-900 relative group cursor-pointer overflow-hidden border border-zinc-200 dark:border-zinc-800" onClick={() => navigate(`/post/${post.id}/comments`)}>
-                {post.imageUrl ? (
-                  <>
-                    <img src={post.imageUrl || undefined} alt="" className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                    <div className="absolute inset-0 bg-transparent group-hover:bg-black/10 dark:group-hover:bg-white/10 transition-colors" />
-                  </>
-                ) : post.videoUrl ? (
-                  <>
-                    <video src={post.videoUrl} className="absolute inset-0 w-full h-full object-cover pointer-events-none group-hover:scale-105 transition-transform duration-500" />
-                    <div className="absolute inset-0 bg-transparent group-hover:bg-black/10 dark:group-hover:bg-white/10 transition-colors" />
-                    <div className="absolute top-1 right-1 bg-black/50 rounded p-1">
-                       <Video size={12} className="text-white" />
-                    </div>
-                  </>
-                ) : (
-                  <div className={cn("absolute inset-0 flex items-center justify-center p-2 text-center text-[10px] sm:text-xs font-medium overflow-hidden break-words", post.isItalic && "italic")}>{formatTextHighlight(post.caption)}</div>
-                )}
-              </div>
-            ))
-          )}
+          <AnimatePresence mode="popLayout">
+            {myPosts.length === 0 ? (
+              <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="col-span-3 py-16 flex flex-col items-center justify-center text-zinc-500 dark:text-zinc-500 bg-zinc-100 dark:bg-zinc-900/30 rounded-xl m-4 border border-zinc-200 dark:border-zinc-800/50 block">
+                <ImageIcon size={48} className="mb-4 opacity-40" />
+                <p className="text-[13px] font-medium">No posts compiled yet</p>
+              </motion.div>
+            ) : (
+              myPosts.map(post => (
+                <motion.div layout initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} transition={{ duration: 0.3 }} key={post.id} className="pt-[100%] bg-zinc-100 dark:bg-zinc-900 relative group cursor-pointer overflow-hidden border border-zinc-200 dark:border-zinc-800" onClick={() => navigate(`/post/${post.id}/comments`)}>
+                  {post.imageUrl ? (
+                    <>
+                      <img src={post.imageUrl || undefined} alt="" className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                      <div className="absolute inset-0 bg-transparent group-hover:bg-black/10 dark:group-hover:bg-white/10 transition-colors" />
+                    </>
+                  ) : post.videoUrl ? (
+                    <>
+                      <ChunkedVideoPlayer videoUrl={post.videoUrl} postId={post.id} className="absolute inset-0 w-full h-full object-cover pointer-events-none group-hover:scale-105 transition-transform duration-500" />
+                      <div className="absolute inset-0 bg-transparent group-hover:bg-black/10 dark:group-hover:bg-white/10 transition-colors" />
+                      <div className="absolute top-1 right-1 bg-black/50 rounded p-1">
+                         <Video size={12} className="text-white" />
+                      </div>
+                    </>
+                  ) : (
+                    <div className={cn("absolute inset-0 flex items-center justify-center p-2 text-center text-[10px] sm:text-xs font-medium overflow-hidden break-words", post.isItalic && "italic")}>{formatTextHighlight(post.caption)}</div>
+                  )}
+                </motion.div>
+              ))
+            )}
+          </AnimatePresence>
         </div>
       </div>
       <FollowListModal isOpen={modalType !== null} onClose={() => setModalType(null)} title={modalType === 'followers' ? 'Followers' : 'Following'} users={modalUsers} />
@@ -4400,19 +4515,41 @@ export default function App() {
   const sendMessage = async (chatId: string, text: string, imageUrl?: string, videoUrl?: string) => {
     if (!currentUser) return;
     const msgId = `m${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
-    const newMsg: any = {
-      id: msgId,
-      chatId,
-      senderId: currentUser.id,
-      text: text || '',
-      createdAt: serverTimestamp(),
-    };
-    if (imageUrl) newMsg.imageUrl = imageUrl;
-    if (videoUrl) newMsg.videoUrl = videoUrl;
+    
+    let finalVideoUrl = videoUrl;
+    
     try {
+      if (videoUrl && videoUrl.length > 500000) {
+        const CHUNK_SIZE = 800000;
+        const chunks = [];
+        for (let i = 0; i < videoUrl.length; i += CHUNK_SIZE) {
+          chunks.push(videoUrl.slice(i, i + CHUNK_SIZE));
+        }
+        
+        await Promise.all(chunks.map((chunkStr, idx) => {
+          return setDoc(doc(collection(db, 'video_chunks')), {
+            postId: msgId,
+            chunkIndex: idx,
+            data: chunkStr,
+            createdAt: serverTimestamp()
+          });
+        }));
+        finalVideoUrl = 'chunked';
+      }
+
+      const newMsg: any = {
+        id: msgId,
+        chatId,
+        senderId: currentUser.id,
+        text: text || '',
+        createdAt: serverTimestamp(),
+      };
+      if (imageUrl) newMsg.imageUrl = imageUrl;
+      if (finalVideoUrl) newMsg.videoUrl = finalVideoUrl;
+
       await setDoc(doc(db, `chats/${chatId}/messages`, msgId), newMsg);
       await updateDoc(doc(db, 'chats', chatId), {
-        lastMessage: text || (imageUrl ? 'Sent an image' : (videoUrl ? 'Sent a video' : '')),
+        lastMessage: text || (imageUrl ? 'Sent an image' : (finalVideoUrl ? 'Sent a video' : '')),
         updatedAt: serverTimestamp(),
         seenBy: [currentUser.id]
       });
