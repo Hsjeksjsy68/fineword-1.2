@@ -161,7 +161,13 @@ export const ContestDetailScreen = () => {
             <Trash2 size={20} />
           </button>
         )}
-        <div className="p-2 w-10 h-10 flex items-center justify-center text-xl bg-zinc-100 dark:bg-zinc-900 rounded-full mx-2">{contest.badgeIcon}</div>
+        <div className="p-2 w-10 h-10 flex items-center justify-center text-xl bg-zinc-100 dark:bg-zinc-900 rounded-full mx-2 overflow-hidden shrink-0">
+          {contest.badgeIcon?.startsWith('data:') || contest.badgeIcon?.startsWith('http') ? (
+            <img src={contest.badgeIcon} alt="Icon" className="w-full h-full object-cover" />
+          ) : (
+            <span>{contest.badgeIcon}</span>
+          )}
+        </div>
       </header>
 
       <div className="flex-1 overflow-y-auto">

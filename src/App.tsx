@@ -3875,7 +3875,11 @@ const UserProfileScreen = () => {
             <div className="mt-4 flex flex-wrap gap-2">
               {user.badges.map(badge => (
                 <div key={badge.id} className="flex items-center gap-1.5 bg-yellow-50 dark:bg-yellow-900/10 border border-yellow-200 dark:border-yellow-900/30 px-2.5 py-1 rounded-full" title={badge.contestTitle}>
-                  <span className="text-sm">{badge.icon}</span>
+                  {badge.icon.startsWith('data:') || badge.icon.startsWith('http') ? (
+                    <img src={badge.icon} alt="Badge" className="w-4 h-4 object-cover rounded-sm" />
+                  ) : (
+                    <span className="text-sm">{badge.icon}</span>
+                  )}
                   <span className="text-[11px] font-bold text-yellow-700 dark:text-yellow-500 uppercase tracking-wider">{badge.name}</span>
                 </div>
               ))}
@@ -4046,7 +4050,11 @@ const ProfileScreen = () => {
             <div className="mt-4 flex flex-wrap gap-2">
               {currentUser.badges.map(badge => (
                 <div key={badge.id} className="flex items-center gap-1.5 bg-yellow-50 dark:bg-yellow-900/10 border border-yellow-200 dark:border-yellow-900/30 px-2.5 py-1 rounded-full" title={badge.contestTitle}>
-                  <span className="text-sm">{badge.icon}</span>
+                  {badge.icon.startsWith('data:') || badge.icon.startsWith('http') ? (
+                    <img src={badge.icon} alt="Badge" className="w-4 h-4 object-cover rounded-sm" />
+                  ) : (
+                    <span className="text-sm">{badge.icon}</span>
+                  )}
                   <span className="text-[11px] font-bold text-yellow-700 dark:text-yellow-500 uppercase tracking-wider">{badge.name}</span>
                 </div>
               ))}
@@ -4725,7 +4733,7 @@ export default function App() {
   return (
     <AppContext.Provider value={{ currentUser, logout, updateProfile, posts, setPosts, updatePost, deletePost, deleteChat, removeGroupMember, chats, messages, setMessages, notifications, followingIds, toggleLike, sendMessage, deleteMessage, showToast, theme, setTheme: updateTheme }}>
       <div className="min-h-[100dvh] h-[100dvh] bg-white dark:bg-black text-black dark:text-white font-sans flex justify-center w-full">
-        <div className="w-full h-full max-w-5xl bg-white dark:bg-black relative flex flex-col overflow-hidden">
+        <div className="w-full h-full max-w-7xl bg-white dark:bg-black relative flex flex-col overflow-hidden">
           
           <AnimatePresence>
             {toastMsg && (
@@ -4744,11 +4752,11 @@ export default function App() {
             <div className="flex-1 flex justify-center items-center bg-white dark:bg-black"><DecorativeLoader /></div>
           ) : (
             <BrowserRouter>
-              <div className="flex-1 flex flex-col md:flex-row min-h-0 relative w-full h-full">
+              <div className="flex-1 flex flex-col md:flex-row min-h-0 relative w-full h-full justify-center">
                 <div className="hidden md:flex flex-col w-[80px] lg:w-[240px] shrink-0 border-r border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black relative z-40">
                    <SideNav />
                 </div>
-                <div className="flex-1 flex flex-col min-h-0 relative w-full max-w-[600px] mx-auto pt-safe sm:border-x border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black">
+                <div className="flex-1 flex flex-col min-h-0 relative w-full max-w-[600px] pt-safe sm:border-x border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black">
                   <AnimatePresence mode="wait">
                     <Routes>
                         <Route path="/" element={<FeedScreen />} />
@@ -4769,7 +4777,7 @@ export default function App() {
                     </Routes>
                   </AnimatePresence>
                 </div>
-                <div className="hidden xl:block w-[300px] shrink-0 border-l border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black relative z-40">
+                <div className="hidden lg:block w-[300px] shrink-0 border-l border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black relative z-40">
                   <RightSidebar />
                 </div>
               </div>
