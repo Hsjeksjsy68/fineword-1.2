@@ -165,6 +165,7 @@ export type Contest = {
   description: string;
   badgeName: string;
   badgeIcon: string;
+  type?: 'image' | 'question';
   maxParticipants: number;
   status: 'recruiting' | 'active' | 'completed';
   participants: string[]; 
@@ -184,6 +185,8 @@ export type ContestMatch = {
   user2Id: string | null;
   user1Photo: string | null;
   user2Photo: string | null;
+  user1Text?: string | null;
+  user2Text?: string | null;
   user1Votes: string[];
   user2Votes: string[];
   winnerId: string | null;
@@ -2455,7 +2458,9 @@ const FeedScreen = () => {
       </header>
       <div className="flex-1 overflow-y-auto divide-y divide-zinc-900/50 pb-6">
         <StoriesBar />
-        <SuggestedUsers />
+        <div className="xl:hidden">
+          <SuggestedUsers />
+        </div>
         <AnimatePresence mode="popLayout">
           {displayPosts.length === 0 ? (
             <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col items-center justify-center p-10 h-64 text-center">
@@ -4244,6 +4249,89 @@ const AuthScreen = () => {
   );
 };
 
+const RightSidebar = () => {
+  const { currentUser, followingIds } = useApp();
+  const [users, setUsers] = useState<User[]>([]);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const fetchSuggested = async () => {
+      try {
+        const q = query(collection(db, 'users'), limit(50));
+        const snap = await getDocs(q);
+        const fetched: User[] = [];
+        snap.forEach(d => {
+          const u = d.data() as User;
+          if (!currentUser || (u.id !== currentUser.id && !followingIds.includes(u.id) && !u.deactivated)) {
+            fetched.push(u);
+          }
+        });
+        setUsers(fetched.sort(() => 0.5 - Math.random()).slice(0, 5));
+      } catch (e) {
+        console.error("Error fetching suggested users: ", e);
+      }
+    };
+    fetchSuggested();
+  }, [currentUser, followingIds]);
+
+  return (
+    <div className="h-full flex flex-col py-6 pl-8 pr-4 overflow-y-auto hide-scrollbar sticky top-0">
+      <div className="relative mb-8">
+        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+          <Search size={16} className="text-zinc-400" />
+        </div>
+        <input 
+          type="text" 
+          placeholder="Search..." 
+          className="w-full bg-zinc-100 dark:bg-zinc-900 border-none rounded-full py-2.5 pl-10 pr-4 text-[13px] text-zinc-900 dark:text-zinc-100 focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && e.currentTarget.value) {
+              navigate('/search?q=' + encodeURIComponent(e.currentTarget.value));
+            }
+          }}
+        />
+      </div>
+
+      {users.length > 0 && (
+        <div className="bg-zinc-50 dark:bg-zinc-900/40 rounded-2xl border border-zinc-200 dark:border-zinc-800 p-5 mb-6">
+          <h3 className="font-bold text-[15px] text-zinc-900 dark:text-zinc-100 mb-4 tracking-tight">Suggested for you</h3>
+          <div className="flex flex-col gap-4">
+            {users.map(u => (
+              <div key={u.id} className="flex items-center gap-3 cursor-pointer group" onClick={() => navigate('/' + u.username)}>
+                <img src={u.avatar || undefined} className="w-10 h-10 rounded-full object-cover bg-zinc-200 dark:bg-zinc-800" />
+                <div className="flex-1 min-w-0">
+                  <div className="font-bold text-[13px] text-zinc-900 dark:text-zinc-100 truncate group-hover:underline">{u.name || u.username}</div>
+                  <div className="text-[12px] text-zinc-500 truncate">@{u.username}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      
+      <div className="bg-zinc-50 dark:bg-zinc-900/40 rounded-2xl border border-zinc-200 dark:border-zinc-800 p-5 mb-6">
+        <h3 className="font-bold text-[15px] text-zinc-900 dark:text-zinc-100 mb-4 tracking-tight">Trending Tags</h3>
+        <div className="flex flex-col gap-4">
+           {['#design', '#photography', '#technology', '#art', '#daily'].map((tag, i) => (
+             <div key={i} className="flex flex-col cursor-pointer group" onClick={() => navigate('/search')}>
+               <span className="font-bold text-[14px] text-zinc-900 dark:text-zinc-100 group-hover:text-indigo-500 transition-colors">{tag}</span>
+               <span className="text-[11px] text-zinc-500 font-medium">{Math.floor(Math.random() * 50 + 10)}k Posts</span>
+             </div>
+           ))}
+        </div>
+      </div>
+
+      <div className="mt-auto pt-4 flex flex-wrap gap-x-3 gap-y-1.5 text-[11px] font-medium text-zinc-400">
+        <a href="#" className="hover:underline">About</a>
+        <a href="#" className="hover:underline">Help</a>
+        <a href="#" className="hover:underline">Privacy</a>
+        <a href="#" className="hover:underline">Terms</a>
+        <div className="w-full mt-2">&copy; 2026 FineWord</div>
+      </div>
+    </div>
+  );
+};
+
 import { CallManager, startCall } from './CallManager';
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -4681,7 +4769,9 @@ export default function App() {
                     </Routes>
                   </AnimatePresence>
                 </div>
-                <div className="hidden xl:block w-[240px] shrink-0" />
+                <div className="hidden xl:block w-[300px] shrink-0 border-l border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black relative z-40">
+                  <RightSidebar />
+                </div>
               </div>
               <div className="md:hidden shrink-0">
                 <BottomNav />

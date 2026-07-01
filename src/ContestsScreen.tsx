@@ -20,6 +20,7 @@ export const ContestsScreen = () => {
   const [description, setDescription] = useState('');
   const [badgeName, setBadgeName] = useState('');
   const [badgeIcon, setBadgeIcon] = useState('🏆');
+  const [contestType, setContestType] = useState<'image' | 'question'>('image');
   const [maxParticipants, setMaxParticipants] = useState(8);
   const [coverPhoto, setCoverPhoto] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -81,6 +82,7 @@ export const ContestsScreen = () => {
         description,
         badgeName,
         badgeIcon,
+        type: contestType,
         maxParticipants,
         coverPhoto,
         status: 'recruiting',
@@ -104,7 +106,11 @@ export const ContestsScreen = () => {
     }
   };
 
-  const activeContests = contests.filter(c => c.status !== 'completed');
+  const activeContests = contests.filter(c => c.status !== 'completed').sort((a, b) => {
+    if (a.type === 'question' && b.type !== 'question') return -1;
+    if (a.type !== 'question' && b.type === 'question') return 1;
+    return 0;
+  });
   const completedContests = contests.filter(c => c.status === 'completed');
 
   return (
@@ -168,6 +174,24 @@ export const ContestsScreen = () => {
             </div>
 
             <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-2">
+                <label className="text-[13px] font-bold text-zinc-700 dark:text-zinc-300 ml-1">Contest Type</label>
+                <div className="flex bg-zinc-100 dark:bg-zinc-900 rounded-xl p-1">
+                  <button 
+                    onClick={() => setContestType('image')}
+                    className={cn("flex-1 py-2 text-[14px] font-bold rounded-lg transition-all", contestType === 'image' ? "bg-white dark:bg-zinc-800 shadow-sm text-zinc-900 dark:text-zinc-100" : "text-zinc-500")}
+                  >
+                    Image Battle
+                  </button>
+                  <button 
+                    onClick={() => setContestType('question')}
+                    className={cn("flex-1 py-2 text-[14px] font-bold rounded-lg transition-all", contestType === 'question' ? "bg-white dark:bg-zinc-800 shadow-sm text-zinc-900 dark:text-zinc-100" : "text-zinc-500")}
+                  >
+                    Question
+                  </button>
+                </div>
+              </div>
+
               <div className="flex flex-col gap-2">
                 <label className="text-[13px] font-bold text-zinc-700 dark:text-zinc-300 ml-1">Contest Title</label>
                 <input 
@@ -244,13 +268,29 @@ export const ContestsScreen = () => {
                     className="bg-zinc-100 dark:bg-zinc-900 border-none outline-none p-3.5 rounded-xl text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-500 font-medium text-[14px]"
                   />
                 </div>
-                <div className="flex flex-col gap-2 w-24">
+                <div className="flex flex-col gap-2 shrink-0">
                   <label className="text-[13px] font-bold text-zinc-700 dark:text-zinc-300 ml-1">Icon</label>
-                  <input 
-                    value={badgeIcon} onChange={e => setBadgeIcon(e.target.value)}
-                    className="bg-zinc-100 dark:bg-zinc-900 border-none outline-none p-3.5 rounded-xl text-center text-xl"
-                    maxLength={2}
-                  />
+                  <label className="w-14 h-14 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl flex items-center justify-center text-2xl cursor-pointer hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors overflow-hidden">
+                    {badgeIcon.startsWith('data:') || badgeIcon.startsWith('http') ? (
+                      <img src={badgeIcon} alt="Badge" className="w-full h-full object-cover" />
+                    ) : (
+                      <span>{badgeIcon}</span>
+                    )}
+                    <input 
+                      type="file" accept="image/*" className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          try {
+                            const url = await resizeImage(file, 200, 200);
+                            setBadgeIcon(url);
+                          } catch (err) {
+                            showToast('Error attaching icon');
+                          }
+                        }
+                      }} 
+                    />
+                  </label>
                 </div>
               </div>
               
@@ -295,7 +335,7 @@ const ContestCard: React.FC<{ contest: Contest, users: any[], currentUser: any }
       <div className="p-5 flex flex-col gap-4">
         <div className="flex items-start justify-between">
           <div className="flex-1 min-w-0 pr-4">
-            <div className="flex items-center gap-2 mb-1.5">
+            <div className="flex items-center gap-2 mb-1.5 flex-wrap">
               <span className={cn(
                 "px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider",
                 contest.status === 'recruiting' ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" :
@@ -304,6 +344,11 @@ const ContestCard: React.FC<{ contest: Contest, users: any[], currentUser: any }
               )}>
                 {contest.status}
               </span>
+              {contest.type === 'question' && (
+                <span className="bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider">
+                  Question
+                </span>
+              )}
               {isHost && <span className="bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider">Host</span>}
             </div>
             <h3 className="font-bold text-xl text-zinc-900 dark:text-zinc-100 truncate">{contest.title}</h3>
@@ -313,8 +358,12 @@ const ContestCard: React.FC<{ contest: Contest, users: any[], currentUser: any }
               </p>
             )}
           </div>
-          <div className="w-12 h-12 rounded-2xl bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center text-2xl shadow-sm border border-zinc-200 dark:border-zinc-800">
-            {contest.badgeIcon}
+          <div className="w-12 h-12 rounded-2xl bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center text-2xl shadow-sm border border-zinc-200 dark:border-zinc-800 overflow-hidden shrink-0">
+            {contest.badgeIcon?.startsWith('data:') || contest.badgeIcon?.startsWith('http') ? (
+              <img src={contest.badgeIcon} alt="Icon" className="w-full h-full object-cover" />
+            ) : (
+              <span>{contest.badgeIcon}</span>
+            )}
           </div>
         </div>
         
