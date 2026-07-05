@@ -3,7 +3,7 @@ import { motion } from 'motion/react';
 import { ChevronLeft, Plus, Trophy, Users, ShieldAlert, Award, Image as ImageIcon, Trash2 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { collection, onSnapshot, addDoc, serverTimestamp, setDoc, doc, updateDoc, query, orderBy, deleteDoc } from 'firebase/firestore';
-import { db } from './firebase';
+import { db, auth } from './firebase';
 import { useApp, Contest, User, cn, resizeImage } from './App';
 import { formatDistanceToNow } from 'date-fns';
 import { DecorativeLoader } from './Loader';
@@ -11,6 +11,8 @@ import { DecorativeLoader } from './Loader';
 export const ContestsScreen = () => {
   const { currentUser, showToast } = useApp();
   const navigate = useNavigate();
+  const isAdmin = ['wwwrakibcom071@gmail.com', 'arbnyt60@gmail.com'].includes(auth.currentUser?.email || '');
+
   const [contests, setContests] = useState<Contest[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -21,6 +23,7 @@ export const ContestsScreen = () => {
   const [badgeName, setBadgeName] = useState('');
   const [badgeIcon, setBadgeIcon] = useState('🏆');
   const [contestType, setContestType] = useState<'image' | 'question'>('image');
+  const [question, setQuestion] = useState('');
   const [maxParticipants, setMaxParticipants] = useState(8);
   const [coverPhoto, setCoverPhoto] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -83,6 +86,7 @@ export const ContestsScreen = () => {
         badgeName,
         badgeIcon,
         type: contestType,
+        question: contestType === 'question' ? question : undefined,
         maxParticipants,
         coverPhoto,
         status: 'recruiting',
@@ -183,14 +187,27 @@ export const ContestsScreen = () => {
                   >
                     Image Battle
                   </button>
-                  <button 
-                    onClick={() => setContestType('question')}
-                    className={cn("flex-1 py-2 text-[14px] font-bold rounded-lg transition-all", contestType === 'question' ? "bg-white dark:bg-zinc-800 shadow-sm text-zinc-900 dark:text-zinc-100" : "text-zinc-500")}
-                  >
-                    Question
-                  </button>
+                  {isAdmin && (
+                    <button 
+                      onClick={() => setContestType('question')}
+                      className={cn("flex-1 py-2 text-[14px] font-bold rounded-lg transition-all", contestType === 'question' ? "bg-white dark:bg-zinc-800 shadow-sm text-zinc-900 dark:text-zinc-100" : "text-zinc-500")}
+                    >
+                      Question
+                    </button>
+                  )}
                 </div>
               </div>
+
+              {contestType === 'question' && (
+                <div className="flex flex-col gap-2">
+                  <label className="text-[13px] font-bold text-zinc-700 dark:text-zinc-300 ml-1">Question</label>
+                  <textarea 
+                    value={question} onChange={e => setQuestion(e.target.value)}
+                    placeholder="e.g. What is the meaning of life?"
+                    className="bg-zinc-100 dark:bg-zinc-900 border-none outline-none p-4 rounded-xl text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-500 font-medium text-[14px] resize-none h-24"
+                  />
+                </div>
+              )}
 
               <div className="flex flex-col gap-2">
                 <label className="text-[13px] font-bold text-zinc-700 dark:text-zinc-300 ml-1">Contest Title</label>

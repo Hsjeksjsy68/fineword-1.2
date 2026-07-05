@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { BrowserRouter, Routes, Route, Link, useNavigate, useLocation, useParams, useSearchParams } from 'react-router-dom';
-import { Home, MessageCircle, User as UserIcon, Heart, Send, PlusSquare, Image as ImageIcon, ChevronLeft, MoreHorizontal, LogOut, Search, Moon, Sun, Share2, Music, Type, Palette, Check, BarChart2, X, Trophy, Settings, Phone, Video, PhoneOff, Mic, MicOff, Camera, CameraOff } from 'lucide-react';
+import { Home, MessageCircle, User as UserIcon, Heart, Send, PlusSquare, Image as ImageIcon, ChevronLeft, MoreHorizontal, LogOut, Search, Moon, Sun, Share2, Music, Type, Palette, Check, BarChart2, X, Trophy, Settings, Phone, Video, PhoneOff, Mic, MicOff, Camera, CameraOff, AlertTriangle } from 'lucide-react';
 import { formatDistanceToNow, format, isSameDay } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
@@ -81,7 +81,7 @@ export const resizeImage = (file: File, maxWidth: number, maxHeight: number): Pr
         const ctx = canvas.getContext('2d');
         if (ctx) {
           ctx.drawImage(img, 0, 0, width, height);
-          resolve(canvas.toDataURL('image/webp', 0.8));
+          resolve(canvas.toDataURL('image/jpeg', 0.6));
         } else {
           reject(new Error("Canvas context is null"));
         }
@@ -166,6 +166,7 @@ export type Contest = {
   badgeName: string;
   badgeIcon: string;
   type?: 'image' | 'question';
+  question?: string;
   maxParticipants: number;
   status: 'recruiting' | 'active' | 'completed';
   participants: string[]; 
@@ -189,6 +190,7 @@ export type ContestMatch = {
   user2Text?: string | null;
   user1Votes: string[];
   user2Votes: string[];
+  question?: string | null;
   winnerId: string | null;
   status: 'pending' | 'active' | 'completed';
 };
@@ -364,6 +366,7 @@ interface AppState {
   sendMessage: (chatId: string, text: string, imageUrl?: string, videoUrl?: string) => void;
   deleteMessage: (chatId: string, msgId: string) => void;
   showToast: (msg: string) => void;
+  showConfirm: (msg: string, onConfirm: () => void) => void;
   theme: 'light' | 'dark';
   setTheme: (t: 'light' | 'dark') => void;
 }
@@ -502,7 +505,7 @@ const VerifiedBadge = ({ isVerified }: { isVerified?: boolean }) => {
 };
 
 const PostItem: React.FC<{ post: Post }> = ({ post }) => {
-  const { toggleLike, showToast, currentUser, updatePost, deletePost } = useApp();
+  const { toggleLike, showToast, showConfirm, currentUser, updatePost, deletePost } = useApp();
   const navigate = useNavigate();
   const [author, setAuthor] = React.useState<User | null>(null);
   const [showOptions, setShowOptions] = useState(false);
@@ -546,10 +549,10 @@ const PostItem: React.FC<{ post: Post }> = ({ post }) => {
   };
 
   const handleDelete = async () => {
-    if (confirm('Are you sure you want to delete this post?')) {
+    showConfirm('Are you sure you want to delete this post?', async () => {
       await deletePost(post.id);
       showToast('Post deleted');
-    }
+    });
   };
 
   const activeBadge = user.activeBadgeId && !user.hideBadges && user.badges ? user.badges.find(b => b.id === user.activeBadgeId) : null;
@@ -911,13 +914,13 @@ const VerificationRequestModal = ({ onClose }: { onClose: () => void }) => {
 };
 
 const SettingsScreen = () => {
-  const { currentUser, showToast, logout, theme, setTheme } = useApp();
+  const { currentUser, showToast, showConfirm, logout, theme, setTheme } = useApp();
   const navigate = useNavigate();
   const [showVerifyModal, setShowVerifyModal] = useState(false);
 
   const handleDeactivate = async () => {
     if (!currentUser) return;
-    if (window.confirm(currentUser.deactivated ? 'Are you sure you want to reactivate your account?' : 'Are you sure you want to deactivate your account?')) {
+    showConfirm(currentUser.deactivated ? 'Are you sure you want to reactivate your account?' : 'Are you sure you want to deactivate your account?', async () => {
       try {
         await updateDoc(doc(db, 'users', currentUser.id), {
           deactivated: !currentUser.deactivated
@@ -927,12 +930,12 @@ const SettingsScreen = () => {
         console.error(e);
         showToast('Error deactivating account');
       }
-    }
+    });
   };
 
   const handleDelete = async () => {
     if (!currentUser) return;
-    if (window.confirm('Are you sure you want to completely delete your account? This cannot be undone.')) {
+    showConfirm('Are you sure you want to completely delete your account? This cannot be undone.', async () => {
       try {
         await deleteDoc(doc(db, 'users', currentUser.id));
         if (auth.currentUser) {
@@ -948,7 +951,7 @@ const SettingsScreen = () => {
            showToast('Error deleting account');
         }
       }
-    }
+    });
   };
 
   return (
@@ -1021,7 +1024,7 @@ const SettingsScreen = () => {
 };
 
 const AdminDashboardScreen = () => {
-  const { posts, showToast } = useApp();
+  const { posts, showToast, showConfirm } = useApp();
   const navigate = useNavigate();
   const [users, setUsers] = useState<User[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
@@ -1095,37 +1098,39 @@ const AdminDashboardScreen = () => {
   };
 
   const handleRemoveVerified = async (userId: string) => {
-    if (!window.confirm("Are you sure you want to remove the verified mark from this user?")) return;
-    try {
-      await updateDoc(doc(db, 'users', userId), {
-        isVerified: false,
-        verifiedUntil: null,
-        verificationStatus: 'none'
-      });
-      showToast('Verified mark removed');
-    } catch (e) {
-      showToast('Error removing verified mark');
-    }
+    showConfirm("Are you sure you want to remove the verified mark from this user?", async () => {
+      try {
+        await updateDoc(doc(db, 'users', userId), {
+          isVerified: false,
+          verifiedUntil: null,
+          verificationStatus: 'none'
+        });
+        showToast('Verified mark removed');
+      } catch (e) {
+        showToast('Error removing verified mark');
+      }
+    });
   };
   
   const handleBanUser = async (userId: string, permanent: boolean = false) => {
-    if (!window.confirm(`Are you sure you want to ban this user ${permanent ? 'permanently' : 'for 7 days'}?`)) return;
-    try {
-      const updates: any = {};
-      if (permanent) {
-        let future = new Date();
-        future.setFullYear(future.getFullYear() + 100);
-        updates.bannedUntil = future;
-      } else {
-        let future = new Date();
-        future.setDate(future.getDate() + 7); // Ban for 7 days
-        updates.bannedUntil = future;
+    showConfirm(`Are you sure you want to ban this user ${permanent ? 'permanently' : 'for 7 days'}?`, async () => {
+      try {
+        const updates: any = {};
+        if (permanent) {
+          let future = new Date();
+          future.setFullYear(future.getFullYear() + 100);
+          updates.bannedUntil = future;
+        } else {
+          let future = new Date();
+          future.setDate(future.getDate() + 7); // Ban for 7 days
+          updates.bannedUntil = future;
+        }
+        await updateDoc(doc(db, 'users', userId), updates);
+        showToast('User banned ' + (permanent ? 'permanently' : 'for 7 days'));
+      } catch (e) {
+        showToast('Error banning user');
       }
-      await updateDoc(doc(db, 'users', userId), updates);
-      showToast('User banned ' + (permanent ? 'permanently' : 'for 7 days'));
-    } catch (e) {
-      showToast('Error banning user');
-    }
+    });
   };
   
   const handleResolveReport = async (reportId: string) => {
@@ -1140,14 +1145,15 @@ const AdminDashboardScreen = () => {
   };
 
   const handleDeleteUser = async (userId: string) => {
-    if (!window.confirm("Are you sure you want to delete this user?")) return;
-    try {
-      await deleteDoc(doc(db, 'users', userId));
-      showToast('User deleted manually');
-    } catch (e) {
-      console.error(e);
-      showToast('Error deleting user');
-    }
+    showConfirm("Are you sure you want to delete this user?", async () => {
+      try {
+        await deleteDoc(doc(db, 'users', userId));
+        showToast('User deleted manually');
+      } catch (e) {
+        console.error(e);
+        showToast('Error deleting user');
+      }
+    });
   }
 
   if (!isAdmin) {
@@ -2830,7 +2836,7 @@ const HighlightedText = ({ text, highlight }: { text: string, highlight: string 
 };
 
 const ChatRoomScreen = () => {
-  const { chats, sendMessage, deleteMessage, currentUser, removeGroupMember, deleteChat } = useApp();
+  const { chats, sendMessage, deleteMessage, currentUser, removeGroupMember, deleteChat, showConfirm, showToast } = useApp();
   const navigate = useNavigate();
   const location = useLocation();
   const chatId = location.pathname.split('/').pop() || '';
@@ -3077,7 +3083,7 @@ const ChatRoomScreen = () => {
                   onTouchStart={(e) => {
                     if (!isMe || msg.isDeleted) return;
                     (e.currentTarget as any)._hold = setTimeout(() => {
-                      if (confirm('Delete message?')) deleteMessage(chatId, msg.id);
+                      showConfirm('Delete message?', () => deleteMessage(chatId, msg.id));
                     }, 500);
                   }}
                   onTouchEnd={(e) => clearTimeout((e.currentTarget as any)._hold)}
@@ -3112,7 +3118,7 @@ const ChatRoomScreen = () => {
                   <div className={cn("flex items-center gap-2", isMe ? "self-end" : "self-start")}>
                     {isMe && !msg.isDeleted && (
                         <button 
-                          onClick={() => { if(confirm('Delete message?')) deleteMessage(chatId, msg.id) }} 
+                          onClick={() => { showConfirm('Delete message?', () => deleteMessage(chatId, msg.id)) }} 
                           className="opacity-0 lg:group-hover:opacity-100 transition-opacity text-[10px] text-rose-500 uppercase tracking-widest font-bold"
                         >
                           Delete
@@ -3283,9 +3289,9 @@ const ChatRoomScreen = () => {
                          
                          {isGroup && chat.admins?.includes(currentUser?.id || '') && uid !== currentUser?.id && (
                            <button onClick={() => {
-                             if(confirm(`Remove ${u.name} from group?`)) {
+                             showConfirm(`Remove ${u.name} from group?`, () => {
                                removeGroupMember(chatId, u.id);
-                             }
+                             });
                            }} className="text-[11px] text-red-500 font-bold bg-red-50 dark:bg-red-900/20 px-2 py-1 rounded">Remove</button>
                          )}
                        </div>
@@ -3314,11 +3320,11 @@ const ChatRoomScreen = () => {
              </div>
 
              <div className="mt-10 border-t border-zinc-200 dark:border-zinc-800 pt-6 flex justify-center pb-10">
-               <button onClick={async () => {
-                 if (confirm("Are you sure you want to delete this chat forever?")) {
+               <button onClick={() => {
+                 showConfirm("Are you sure you want to delete this chat forever?", async () => {
                    await deleteChat(chatId);
                    navigate('/chat');
-                 }
+                 });
                }} className="text-red-500 font-bold bg-red-50 dark:bg-red-900/20 px-6 py-2 rounded-xl text-sm transition-colors hover:bg-red-100 dark:hover:bg-red-900/40">Delete Chat</button>
              </div>
            </div>
@@ -4352,6 +4358,11 @@ export default function App() {
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [deactivatedUserIds, setDeactivatedUserIds] = useState<string[]>([]);
+  const [confirmDialog, setConfirmDialog] = useState<{ message: string, onConfirm: () => void } | null>(null);
+
+  const showConfirm = (message: string, onConfirm: () => void) => {
+    setConfirmDialog({ message, onConfirm });
+  };
 
   useEffect(() => {
     const qDeactivated = query(collection(db, 'users'), where('deactivated', '==', true));
@@ -4731,7 +4742,7 @@ export default function App() {
   };
 
   return (
-    <AppContext.Provider value={{ currentUser, logout, updateProfile, posts, setPosts, updatePost, deletePost, deleteChat, removeGroupMember, chats, messages, setMessages, notifications, followingIds, toggleLike, sendMessage, deleteMessage, showToast, theme, setTheme: updateTheme }}>
+    <AppContext.Provider value={{ currentUser, logout, updateProfile, posts, setPosts, updatePost, deletePost, deleteChat, removeGroupMember, chats, messages, setMessages, notifications, followingIds, toggleLike, sendMessage, deleteMessage, showToast, showConfirm, theme, setTheme: updateTheme }}>
       <div className="min-h-[100dvh] h-[100dvh] bg-white dark:bg-black text-black dark:text-white font-sans flex justify-center w-full">
         <div className="w-full h-full max-w-7xl bg-white dark:bg-black relative flex flex-col overflow-hidden">
           
@@ -4744,6 +4755,47 @@ export default function App() {
                 className="absolute top-12 left-1/2 z-[200] bg-zinc-200 dark:bg-zinc-800 text-black dark:text-white text-[13px] font-bold tracking-wide px-4 py-2 rounded-full shadow-lg border border-zinc-700 whitespace-nowrap"
               >
                 {toastMsg}
+              </motion.div>
+            )}
+            
+            {confirmDialog && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 z-[250] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4"
+              >
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                  className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 shadow-2xl max-w-[320px] w-full flex flex-col items-center text-center relative overflow-hidden"
+                >
+                  <div className="w-12 h-12 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center mb-4 text-red-500">
+                    <AlertTriangle size={24} />
+                  </div>
+                  <h3 className="font-bold text-lg text-zinc-900 dark:text-zinc-100 mb-2">Are you sure?</h3>
+                  <p className="text-zinc-500 text-[14px] font-medium mb-6 leading-relaxed">
+                    {confirmDialog.message}
+                  </p>
+                  <div className="flex gap-3 w-full">
+                    <button
+                      onClick={() => setConfirmDialog(null)}
+                      className="flex-1 py-3 rounded-2xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-900 dark:text-zinc-100 font-bold text-[14px] transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => {
+                        confirmDialog.onConfirm();
+                        setConfirmDialog(null);
+                      }}
+                      className="flex-1 py-3 rounded-2xl bg-red-500 hover:bg-red-600 text-white font-bold text-[14px] shadow-lg shadow-red-500/20 transition-all active:scale-95"
+                    >
+                      Confirm
+                    </button>
+                  </div>
+                </motion.div>
               </motion.div>
             )}
           </AnimatePresence>

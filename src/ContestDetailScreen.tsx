@@ -11,7 +11,7 @@ import { DecorativeLoader } from './Loader';
 export const ContestDetailScreen = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { currentUser, showToast } = useApp();
+  const { currentUser, showToast, showConfirm } = useApp();
   
   const [contest, setContest] = useState<Contest | null>(null);
   const [matches, setMatches] = useState<ContestMatch[]>([]);
@@ -135,7 +135,7 @@ export const ContestDetailScreen = () => {
 
   const handleDeleteContest = async () => {
     if (!isHost) return;
-    if (window.confirm('Are you sure you want to delete this contest?')) {
+    showConfirm('Are you sure you want to delete this contest?', async () => {
       try {
         await deleteDoc(doc(db, 'contests', contest.id));
         showToast('Contest deleted');
@@ -143,7 +143,7 @@ export const ContestDetailScreen = () => {
       } catch (err) {
         showToast('Failed to delete contest');
       }
-    }
+    });
   };
 
   return (
@@ -404,13 +404,31 @@ const MatchList: React.FC<{ matches: ContestMatch[], round: number, currentUser:
 
   return (
     <div className="flex flex-col gap-6">
+      {contest.type === 'question' && contest.question && (
+        <div className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-900/30 rounded-2xl p-5 mb-2">
+          <div className="flex items-start gap-3">
+            <div className="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900/50 flex items-center justify-center shrink-0">
+              <Type size={16} className="text-indigo-600 dark:text-indigo-400" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-indigo-900 dark:text-indigo-300 mb-1 uppercase tracking-wider">The Question</h3>
+              <p className="text-zinc-900 dark:text-zinc-100 font-medium text-[15px] leading-relaxed">
+                {contest.question}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <div className="flex flex-col">
           <h2 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-500 to-purple-500">
             Round {round}
           </h2>
           {isHost && !isRoundComplete && hasTie && canCompleteRound && (
-             <span className="text-xs text-red-500 font-medium tracking-tight">Cannot continue: A match is currently tied.</span>
+             <span className="text-xs text-red-500 font-medium tracking-tight">
+               {contest.type === 'question' ? 'Please select a winner for all matches to continue.' : 'Cannot continue: A match is currently tied.'}
+             </span>
           )}
         </div>
         {isHost && !isRoundComplete && canCompleteRound && !hasTie && (
@@ -429,6 +447,10 @@ const MatchList: React.FC<{ matches: ContestMatch[], round: number, currentUser:
           const amIP1 = currentUser?.id === p1.id;
           const amIP2 = currentUser?.id === p2.id;
           const hasVoted = match.user1Votes.includes(currentUser?.id || '') || match.user2Votes.includes(currentUser?.id || '');
+          const isQuestion = contest.type === 'question';
+          const canSeeP1Answer = !isQuestion || isHost || amIP1;
+          const canSeeP2Answer = !isQuestion || isHost || amIP2;
+          const canVote = match.status === 'active' && !hasVoted && !amIP1 && !amIP2 && currentUser && (!isQuestion || isHost);
 
           return (
             <div key={match.id} className="border border-zinc-200 dark:border-zinc-800 rounded-3xl overflow-hidden bg-zinc-50 dark:bg-zinc-900/40 relative">
@@ -436,6 +458,43 @@ const MatchList: React.FC<{ matches: ContestMatch[], round: number, currentUser:
                 <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 bg-black/80 backdrop-blur text-white px-4 py-1.5 rounded-full text-[11px] font-bold tracking-widest uppercase flex items-center gap-1.5">
                   <Trophy size={14} className="text-yellow-400" />
                   {match.winnerId === p1.id ? p1.name : p2.name} Won
+                </div>
+              )}
+
+              {isQuestion && (
+                <div className="bg-indigo-50 dark:bg-indigo-900/30 border-b border-indigo-100 dark:border-indigo-900/50 p-4">
+                  {match.question ? (
+                    <div className="text-center">
+                      <span className="text-[11px] font-bold text-indigo-500 uppercase tracking-widest mb-1 block">Match Question</span>
+                      <p className="font-bold text-indigo-950 dark:text-indigo-100">{match.question}</p>
+                    </div>
+                  ) : (
+                    <div className="text-center">
+                      {isHost ? (
+                        <div className="flex items-center gap-2 max-w-sm mx-auto">
+                          <input 
+                            type="text" 
+                            id={`match-q-${match.id}`}
+                            placeholder="Type question for this match..." 
+                            className="flex-1 bg-white dark:bg-black border border-indigo-200 dark:border-indigo-800 rounded-lg px-3 py-1.5 text-sm outline-none"
+                          />
+                          <button 
+                            onClick={async () => {
+                              const el = document.getElementById(`match-q-${match.id}`) as HTMLInputElement;
+                              if (el && el.value.trim()) {
+                                await updateDoc(doc(db, 'contest_matches', match.id), { question: el.value.trim() });
+                              }
+                            }}
+                            className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-1.5 rounded-lg text-sm font-bold whitespace-nowrap"
+                          >
+                            Set
+                          </button>
+                        </div>
+                      ) : (
+                        <p className="text-indigo-500 font-medium text-sm">Waiting for host to set question...</p>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
               
@@ -451,21 +510,27 @@ const MatchList: React.FC<{ matches: ContestMatch[], round: number, currentUser:
                     <>
                       {contest.type === 'question' ? (
                         <div className={cn("w-full h-full flex flex-col p-6 pt-16 bg-gradient-to-br from-indigo-50 dark:from-indigo-950 to-purple-50 dark:to-purple-950", match.status === 'completed' && match.winnerId !== p1.id && "grayscale opacity-50")}>
-                          <p className="text-zinc-900 dark:text-zinc-100 font-medium text-lg leading-relaxed break-words overflow-y-auto hide-scrollbar text-center my-auto">
-                            {match.user1Text}
-                          </p>
+                          {canSeeP1Answer ? (
+                            <p className="text-zinc-900 dark:text-zinc-100 font-medium text-lg leading-relaxed break-words overflow-y-auto hide-scrollbar text-center my-auto">
+                              {match.user1Text}
+                            </p>
+                          ) : (
+                            <p className="text-zinc-500 dark:text-zinc-400 font-medium text-sm text-center my-auto italic">
+                              Answer hidden<br/>(Visible to host only)
+                            </p>
+                          )}
                         </div>
                       ) : (
                         <img src={match.user1Photo || undefined} className={cn("w-full h-full object-cover", match.status === 'completed' && match.winnerId !== p1.id && "grayscale opacity-50")} />
                       )}
-                      {match.status === 'active' && !hasVoted && !amIP1 && !amIP2 && currentUser && (
+                      {canVote && (
                         <div className="absolute inset-x-0 bottom-6 flex justify-center drop-shadow-md z-10">
                            <button onClick={() => handleVote(match.id, 1)} className="bg-red-500 hover:bg-red-600 text-white w-14 h-14 rounded-full flex items-center justify-center shadow-xl active:scale-95 transition-all">
                              <Heart size={28} className="fill-current" />
                            </button>
                         </div>
                       )}
-                      {(match.status === 'completed' || hasVoted) && (
+                      {(match.status === 'completed' || hasVoted) && (!isQuestion || isHost) && (
                         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 bg-black/60 backdrop-blur px-3 py-1.5 rounded-full text-white font-bold text-sm">
                           {match.user1Votes.length} Votes
                         </div>
@@ -481,9 +546,13 @@ const MatchList: React.FC<{ matches: ContestMatch[], round: number, currentUser:
                            <p className="text-zinc-500 text-sm font-medium text-center mb-4">
                              {contest.type === 'question' ? 'Enter your answer for this round' : 'Upload your photo for this round'}
                            </p>
-                           <button onClick={() => setUploadingMatch(`${match.id}-1`)} className="bg-indigo-600 text-white px-5 py-2 rounded-xl text-sm font-bold">
-                             {contest.type === 'question' ? 'Type Answer' : 'Select Photo'}
-                           </button>
+                           {contest.type === 'question' && !match.question ? (
+                             <p className="text-indigo-400 text-xs font-bold text-center uppercase tracking-widest bg-indigo-50 dark:bg-indigo-900/20 px-3 py-1.5 rounded-lg">Wait for Question</p>
+                           ) : (
+                             <button onClick={() => setUploadingMatch(`${match.id}-1`)} className="bg-indigo-600 text-white px-5 py-2 rounded-xl text-sm font-bold">
+                               {contest.type === 'question' ? 'Type Answer' : 'Select Photo'}
+                             </button>
+                           )}
                         </>
                       ) : (
                         <p className="text-zinc-400 text-sm font-medium text-center">Waiting for {p1.name} to {contest.type === 'question' ? 'answer' : 'upload photo'}...</p>
@@ -511,21 +580,27 @@ const MatchList: React.FC<{ matches: ContestMatch[], round: number, currentUser:
                     <>
                       {contest.type === 'question' ? (
                         <div className={cn("w-full h-full flex flex-col p-6 pt-16 bg-gradient-to-br from-indigo-50 dark:from-indigo-950 to-purple-50 dark:to-purple-950", match.status === 'completed' && match.winnerId !== p2.id && "grayscale opacity-50")}>
-                          <p className="text-zinc-900 dark:text-zinc-100 font-medium text-lg leading-relaxed break-words overflow-y-auto hide-scrollbar text-center my-auto">
-                            {match.user2Text}
-                          </p>
+                          {canSeeP2Answer ? (
+                            <p className="text-zinc-900 dark:text-zinc-100 font-medium text-lg leading-relaxed break-words overflow-y-auto hide-scrollbar text-center my-auto">
+                              {match.user2Text}
+                            </p>
+                          ) : (
+                            <p className="text-zinc-500 dark:text-zinc-400 font-medium text-sm text-center my-auto italic">
+                              Answer hidden<br/>(Visible to host only)
+                            </p>
+                          )}
                         </div>
                       ) : (
                         <img src={match.user2Photo || undefined} className={cn("w-full h-full object-cover", match.status === 'completed' && match.winnerId !== p2.id && "grayscale opacity-50")} />
                       )}
-                      {match.status === 'active' && !hasVoted && !amIP1 && !amIP2 && currentUser && (
+                      {canVote && (
                         <div className="absolute inset-x-0 bottom-6 flex justify-center drop-shadow-md z-10">
                            <button onClick={() => handleVote(match.id, 2)} className="bg-red-500 hover:bg-red-600 text-white w-14 h-14 rounded-full flex items-center justify-center shadow-xl active:scale-95 transition-all">
                              <Heart size={28} className="fill-current" />
                            </button>
                         </div>
                       )}
-                      {(match.status === 'completed' || hasVoted) && (
+                      {(match.status === 'completed' || hasVoted) && (!isQuestion || isHost) && (
                         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 bg-black/60 backdrop-blur px-3 py-1.5 rounded-full text-white font-bold text-sm">
                           {match.user2Votes.length} Votes
                         </div>
@@ -541,9 +616,13 @@ const MatchList: React.FC<{ matches: ContestMatch[], round: number, currentUser:
                            <p className="text-zinc-500 text-sm font-medium text-center mb-4">
                              {contest.type === 'question' ? 'Enter your answer for this round' : 'Upload your photo for this round'}
                            </p>
-                           <button onClick={() => setUploadingMatch(`${match.id}-2`)} className="bg-indigo-600 text-white px-5 py-2 rounded-xl text-sm font-bold">
-                             {contest.type === 'question' ? 'Type Answer' : 'Select Photo'}
-                           </button>
+                           {contest.type === 'question' && !match.question ? (
+                             <p className="text-indigo-400 text-xs font-bold text-center uppercase tracking-widest bg-indigo-50 dark:bg-indigo-900/20 px-3 py-1.5 rounded-lg">Wait for Question</p>
+                           ) : (
+                             <button onClick={() => setUploadingMatch(`${match.id}-2`)} className="bg-indigo-600 text-white px-5 py-2 rounded-xl text-sm font-bold">
+                               {contest.type === 'question' ? 'Type Answer' : 'Select Photo'}
+                             </button>
+                           )}
                         </>
                       ) : (
                         <p className="text-zinc-400 text-sm font-medium text-center">Waiting for {p2.name} to {contest.type === 'question' ? 'answer' : 'upload photo'}...</p>
