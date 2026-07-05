@@ -1,0 +1,32 @@
+    function isValidUser(data) {
+      return data.keys().hasAll(['id', 'username', 'name'])
+        // id size check
+        && data.id is string
+        && data.id.size() >= 1
+        && data.id.size() <= 128
+        // username check
+        && data.username is string
+        && data.username.size() >= 1
+        && data.username.size() <= 100
+        // name check
+        && data.name is string
+        && data.name.size() >= 1
+        && data.name.size() <= 150
+        // avatar check (optional)
+        && (!('avatar' in data) || data.avatar is string)
+        // bio check (optional)
+        && (!('bio' in data) || data.bio is string)
+        // theme check (optional)
+        && (!('theme' in data) || data.theme in ['light', 'dark'])
+        // coverPhoto check (optional)
+        && (!('coverPhoto' in data) || data.coverPhoto is string)
+        // verification checks
+        && (!('isVerified' in data) || data.isVerified is bool)
+        && (!('verificationStatus' in data) || data.verificationStatus in ['none', 'pending', 'accepted', 'rejected'])
+        && (!('verificationData' in data) || data.verificationData is map)
+        && (!('deactivated' in data) || data.deactivated is bool)
+        && (!('hideBadges' in data) || data.hideBadges is bool)
+        && (!('badges' in data) || data.badges is list)
+        && (!('activeBadgeId' in data) || data.activeBadgeId is string || data.activeBadgeId == null)
+        && (!('lastActive' in data) || data.lastActive is timestamp);
+    }

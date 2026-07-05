@@ -46,15 +46,13 @@ service cloud.firestore {
         && data.name.size() >= 1
         && data.name.size() <= 150
         // avatar check (optional)
-        && (data.get('avatar', '') is string)
-        && (data.get('avatar', '').size() <= 10485760)
+        && (!('avatar' in data) || data.avatar is string)
         // bio check (optional)
-        && (data.get('bio', '') is string)
-        && (data.get('bio', '').size() <= 500)
+        && (!('bio' in data) || data.bio is string)
         // theme check (optional)
         && (!('theme' in data) || data.theme in ['light', 'dark'])
         // coverPhoto check (optional)
-        && (!('coverPhoto' in data) || (data.coverPhoto is string && data.coverPhoto.size() <= 10485760))
+        && (!('coverPhoto' in data) || data.coverPhoto is string)
         // verification checks
         && (!('isVerified' in data) || data.isVerified is bool)
         && (!('verificationStatus' in data) || data.verificationStatus in ['none', 'pending', 'accepted', 'rejected'])
