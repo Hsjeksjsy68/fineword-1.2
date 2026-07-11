@@ -13,7 +13,7 @@ import { twMerge } from 'tailwind-merge';
 import { DecorativeLoader } from './Loader';
 import { db, auth } from './firebase';
 import { doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, onSnapshot, query, orderBy, serverTimestamp, Timestamp, where, limit } from 'firebase/firestore';
-import { signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, User as FirebaseUser, deleteUser, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
+import { signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, User as FirebaseUser, deleteUser, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
 
 export enum OperationType {
   CREATE = 'create',
@@ -3415,17 +3415,17 @@ const SearchScreen = () => {
               </h2>
               <div className="grid grid-cols-3 gap-1">
                 {(queryText.trim() ? matchedPosts : randomPosts).map(post => (
-                  <Link key={post.id} to={`/post/${post.id}`} className="aspect-square bg-zinc-100 dark:bg-zinc-900 relative block group">
+                  <Link key={post.id} to={`/post/${post.id}/comments`} className="aspect-square bg-zinc-100 dark:bg-zinc-900 relative block group overflow-hidden">
                      {post.imageUrl ? (
-                       <img src={post.imageUrl} alt="" className="w-full h-full object-cover" />
+                       <img src={post.imageUrl} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                      ) : post.videoUrl ? (
-                       <ChunkedVideoPlayer videoUrl={post.videoUrl} postId={post.id} className="w-full h-full object-cover pointer-events-none" />
+                       <ChunkedVideoPlayer videoUrl={post.videoUrl} postId={post.id} className="w-full h-full object-cover pointer-events-none group-hover:scale-105 transition-transform duration-500" />
                      ) : (
-                       <div className="w-full h-full flex items-center justify-center p-2 text-center text-[10px] break-words">
+                       <div className="w-full h-full flex items-center justify-center p-2 text-center text-[10px] break-words group-hover:scale-105 transition-transform duration-500">
                          <span className="line-clamp-3">{post.caption}</span>
                        </div>
                      )}
-                     <div className="absolute inset-0 bg-white dark:bg-transparent/0 group-hover:bg-white dark:bg-black/20 transition-colors" />
+                     <div className="absolute inset-0 bg-transparent group-hover:bg-black/10 dark:group-hover:bg-white/10 transition-colors" />
                      {post.videoUrl && (
                         <div className="absolute top-1 right-1 bg-black/50 rounded p-1">
                            <Video size={12} className="text-white" />
@@ -4133,7 +4133,9 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 const AuthScreen = () => {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
+  const [isForgotPassword, setIsForgotPassword] = useState(false);
   const [loginInput, setLoginInput] = useState('');
   const [password, setPassword] = useState('');
 
@@ -4141,6 +4143,9 @@ const AuthScreen = () => {
     setLoading(true);
     setErrorMsg('');
     const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({
+      prompt: 'select_account'
+    });
     try {
       if (useRedirect) {
         const { signInWithRedirect } = await import('firebase/auth');
@@ -4169,10 +4174,16 @@ const AuthScreen = () => {
     }
     setLoading(true);
     setErrorMsg('');
+    setSuccessMsg('');
     
-    // Auto-detect if input is username or email
+    if (isSignUp && !loginInput.includes('@')) {
+      setErrorMsg('Please enter a valid email address for sign up.');
+      setLoading(false);
+      return;
+    }
+    
     let finalEmail = loginInput;
-    if (!loginInput.includes('@')) {
+    if (!isSignUp && !loginInput.includes('@')) {
       finalEmail = `${loginInput.toLowerCase()}@fineword.local`;
     }
 
@@ -4195,6 +4206,30 @@ const AuthScreen = () => {
         setErrorMsg('Email/Password sign-in is disabled. Please enable it in your Firebase Console -> Authentication -> Sign-in method.');
       } else {
         setErrorMsg(err.message || 'Authentication failed. Please try again.');
+      }
+    }
+  };
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!loginInput || !loginInput.includes('@')) {
+      setErrorMsg('Please enter your valid email address to reset password.');
+      return;
+    }
+    setLoading(true);
+    setErrorMsg('');
+    setSuccessMsg('');
+    try {
+      await sendPasswordResetEmail(auth, loginInput);
+      setSuccessMsg('Password reset email sent. Please check your inbox.');
+      setLoading(false);
+    } catch (err: any) {
+      console.error(err);
+      setLoading(false);
+      if (err.code === 'auth/user-not-found') {
+         setErrorMsg('No user found with this email address.');
+      } else {
+         setErrorMsg(err.message || 'Failed to send password reset email.');
       }
     }
   };
