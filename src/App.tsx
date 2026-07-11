@@ -3898,6 +3898,10 @@ const UserProfileScreen = () => {
                  {isFollowing ? 'Following' : 'Follow'}
               </button>
               <button onClick={handleMessage} className="flex-1 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-800 py-2.5 rounded-xl text-[12px] text-black dark:text-white uppercase tracking-widest font-bold transition-all text-center">Message</button>
+              <button onClick={() => {
+                const url = `${window.location.origin}/${user.username}`;
+                navigator.clipboard.writeText(url).then(() => showToast('Profile link copied!'));
+              }} className="flex-1 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-800 py-2.5 rounded-xl text-[12px] text-black dark:text-white uppercase tracking-widest font-bold transition-all text-center">Share</button>
             </div>
           )}
         </div>
@@ -4070,8 +4074,8 @@ const ProfileScreen = () => {
           <div className="mt-6 flex gap-3">
             <button onClick={() => navigate('/profile/edit')} className="flex-1 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-200 dark:bg-zinc-800 py-2.5 rounded-xl text-[12px] uppercase tracking-widest font-bold transition-all text-center text-zinc-700 dark:text-zinc-300 hover:text-black dark:text-white">Edit profile</button>
             <button onClick={() => {
-              navigator.clipboard.writeText(window.location.href);
-              showToast('Profile link copied!');
+              const url = `${window.location.origin}/${currentUser.username}`;
+              navigator.clipboard.writeText(url).then(() => showToast('Profile link copied!'));
             }} className="flex-1 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-200 dark:bg-zinc-800 py-2.5 rounded-xl text-[12px] uppercase tracking-widest font-bold transition-all text-center text-zinc-700 dark:text-zinc-300 hover:text-black dark:text-white">Share profile</button>
             <button onClick={() => navigate('/settings')} className="bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-200 dark:bg-zinc-800 px-4 py-2.5 rounded-xl transition-all text-zinc-700 dark:text-zinc-300 hover:text-black dark:text-white">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
