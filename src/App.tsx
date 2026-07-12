@@ -510,6 +510,39 @@ const VerifiedBadge = ({ isVerified }: { isVerified?: boolean }) => {
   );
 };
 
+const FollowListModal = ({ isOpen, onClose, title, users }: { isOpen: boolean; onClose: () => void; title: string; users: any[] }) => {
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+      <div className="bg-white dark:bg-zinc-900 rounded-2xl w-full max-w-md max-h-[80vh] flex flex-col overflow-hidden shadow-2xl border border-zinc-200 dark:border-zinc-800">
+        <div className="flex items-center justify-between p-4 border-b border-zinc-200 dark:border-zinc-800 sticky top-0 bg-white dark:bg-zinc-900 z-10">
+          <h2 className="text-xl font-bold">{title}</h2>
+          <button onClick={onClose} className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-full hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors">
+            <X size={20} />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4">
+          {users.length === 0 ? (
+            <div className="text-center text-zinc-500 py-8">No users found.</div>
+          ) : (
+            <div className="flex flex-col gap-4">
+              {users.map(user => (
+                <Link key={user.id} to={`/${user.username}`} onClick={onClose} className="flex items-center gap-3 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 p-2 rounded-xl transition-colors">
+                  <img src={user.avatar || undefined} alt={user.username} className="w-12 h-12 rounded-full object-cover" />
+                  <div className="flex flex-col flex-1 overflow-hidden">
+                    <span className="font-bold flex items-center gap-1">{user.username} <VerifiedBadge isVerified={user.isVerified} /></span>
+                    <span className="text-sm text-zinc-500 line-clamp-1 truncate">{user.name}</span>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const PostItem: React.FC<{ post: Post }> = ({ post }) => {
   const { toggleLike, showToast, showConfirm, currentUser, updatePost, deletePost } = useApp();
   const navigate = useNavigate();
