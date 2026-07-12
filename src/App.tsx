@@ -3341,6 +3341,10 @@ const SearchScreen = () => {
   const { currentUser, posts } = useApp();
 
   useEffect(() => {
+    setQueryText(searchParams.get('q') || '');
+  }, [searchParams]);
+
+  useEffect(() => {
     if (!queryText.trim()) {
       setUsers([]);
       return;
@@ -4303,7 +4307,7 @@ const AuthScreen = () => {
 };
 
 const RightSidebar = () => {
-  const { currentUser, followingIds } = useApp();
+  const { currentUser, followingIds, posts } = useApp();
   const [users, setUsers] = useState<User[]>([]);
   const navigate = useNavigate();
 
@@ -4326,6 +4330,35 @@ const RightSidebar = () => {
     };
     fetchSuggested();
   }, [currentUser, followingIds]);
+
+  const trendingTags = useMemo(() => {
+    const counts: Record<string, number> = {};
+    posts.forEach(post => {
+      const caption = post.caption || '';
+      const tags = caption.match(/#[a-zA-Z0-9_]+/g) || [];
+      tags.forEach(tag => {
+        const lowerTag = tag.toLowerCase();
+        counts[lowerTag] = (counts[lowerTag] || 0) + 1;
+      });
+    });
+    const sorted = Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([tag, count]) => ({ tag, count }));
+      
+    // Fill with default tags if not enough
+    if (sorted.length < 5) {
+       const defaults = ['#design', '#photography', '#technology', '#art', '#daily'];
+       let i = 0;
+       while (sorted.length < 5 && i < defaults.length) {
+          if (!sorted.find(s => s.tag === defaults[i])) {
+              sorted.push({ tag: defaults[i], count: Math.floor(Math.random() * 50 + 10) });
+          }
+          i++;
+       }
+    }
+    return sorted;
+  }, [posts]);
 
   return (
     <div className="h-full flex flex-col py-6 pl-8 pr-4 overflow-y-auto hide-scrollbar sticky top-0">
@@ -4365,10 +4398,10 @@ const RightSidebar = () => {
       <div className="bg-zinc-50 dark:bg-zinc-900/40 rounded-2xl border border-zinc-200 dark:border-zinc-800 p-5 mb-6">
         <h3 className="font-bold text-[15px] text-zinc-900 dark:text-zinc-100 mb-4 tracking-tight">Trending Tags</h3>
         <div className="flex flex-col gap-4">
-           {['#design', '#photography', '#technology', '#art', '#daily'].map((tag, i) => (
-             <div key={i} className="flex flex-col cursor-pointer group" onClick={() => navigate('/search')}>
-               <span className="font-bold text-[14px] text-zinc-900 dark:text-zinc-100 group-hover:text-indigo-500 transition-colors">{tag}</span>
-               <span className="text-[11px] text-zinc-500 font-medium">{Math.floor(Math.random() * 50 + 10)}k Posts</span>
+           {trendingTags.map((item, i) => (
+             <div key={i} className="flex flex-col cursor-pointer group" onClick={() => navigate('/search?q=' + encodeURIComponent(item.tag))}>
+               <span className="font-bold text-[14px] text-zinc-900 dark:text-zinc-100 group-hover:text-indigo-500 transition-colors">{item.tag}</span>
+               <span className="text-[11px] text-zinc-500 font-medium">{item.count} {item.count === 1 ? 'Post' : 'Posts'}</span>
              </div>
            ))}
         </div>
@@ -4382,8 +4415,7 @@ const RightSidebar = () => {
         <div className="w-full mt-2">&copy; 2026 FineWord</div>
       </div>
     </div>
-  );
-};
+  );};
 
 import { CallManager, startCall } from './CallManager';
 export default function App() {

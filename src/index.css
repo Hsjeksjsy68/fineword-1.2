@@ -7,6 +7,10 @@
   --font-sans: "Poppins", ui-sans-serif, system-ui, sans-serif;
 }
 
+html {
+  font-size: 95%;
+}
+
 html, body {
   @apply bg-white text-black dark:bg-zinc-950 dark:text-white;
   margin: 0;
