@@ -1,0 +1,352 @@
+const AdminDashboardScreen = () => {
+  const { posts, showToast, showConfirm } = useApp();
+  const navigate = useNavigate();
+  const [users, setUsers] = useState<User[]>([]);
+  const [reports, setReports] = useState<Report[]>([]);
+  const [tab, setTab] = useState<'overview' | 'verifications' | 'verified' | 'reports' | 'users'>('overview');
+
+  const isAdmin = ['wwwrakibcom071@gmail.com', 'arbnyt60@gmail.com'].includes(auth.currentUser?.email || '');
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    const unsubUsers = onSnapshot(collection(db, 'users'), snap => {
+      const u: User[] = [];
+      snap.forEach(d => u.push(d.data() as User));
+      setUsers(u);
+    }, e => console.error("Admin Users error:", e));
+    
+    const unsubReports = onSnapshot(collection(db, 'reports'), snap => {
+      const r: Report[] = [];
+      snap.forEach(d => r.push({ ...d.data(), id: d.id, createdAt: d.data().createdAt?.toDate?.() || new Date() } as Report));
+      setReports(r.sort((a,b) => b.createdAt.getTime() - a.createdAt.getTime()));
+    }, e => console.error("Admin Reports error:", e));
+    
+    return () => { unsubUsers(); unsubReports(); };
+  }, [isAdmin]);
+
+  const handleAction = async (userId: string, action: 'accepted' | 'rejected') => {
+    try {
+      const updates: any = {
+        verificationStatus: action,
+        isVerified: action === 'accepted'
+      };
+      
+      if (action === 'accepted') {
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + 30); // 30 days
+        updates.verifiedUntil = expiresAt;
+      } else {
+        updates.verifiedUntil = null;
+      }
+      
+      await updateDoc(doc(db, 'users', userId), updates);
+      
+      if (action === 'rejected') {
+        const notifId = `sys_${Date.now()}_${Math.floor(Math.random() * 1000000)}`;
+        await setDoc(doc(db, 'notifications', notifId), {
+          id: notifId,
+          userId: userId,
+          actorId: auth.currentUser?.uid || 'system',
+          type: 'system',
+          message: 'Your verification request was not accepted. Please review your submitted details and try again.',
+          read: false,
+          createdAt: serverTimestamp()
+        });
+      } else if (action === 'accepted') {
+        const notifId = `sys_${Date.now()}_${Math.floor(Math.random() * 1000000)}`;
+        await setDoc(doc(db, 'notifications', notifId), {
+          id: notifId,
+          userId: userId,
+          actorId: auth.currentUser?.uid || 'system',
+          type: 'system',
+          message: 'Congratulations! Your verification request has been accepted. You are now verified.',
+          read: false,
+          createdAt: serverTimestamp()
+        });
+      }
+      
+      showToast('Verification request ' + action);
+    } catch (e) {
+      console.error(e);
+      showToast('Error processing request');
+    }
+  };
+
+  const handleRemoveVerified = async (userId: string) => {
+    showConfirm("Are you sure you want to remove the verified mark from this user?", async () => {
+      try {
+        await updateDoc(doc(db, 'users', userId), {
+          isVerified: false,
+          verifiedUntil: null,
+          verificationStatus: 'none'
+        });
+        showToast('Verified mark removed');
+      } catch (e) {
+        showToast('Error removing verified mark');
+      }
+    });
+  };
+  
+  const handleBanUser = async (userId: string, permanent: boolean = false) => {
+    showConfirm(`Are you sure you want to ban this user ${permanent ? 'permanently' : 'for 7 days'}?`, async () => {
+      try {
+        const updates: any = {};
+        if (permanent) {
+          let future = new Date();
+          future.setFullYear(future.getFullYear() + 100);
+          updates.bannedUntil = future;
+        } else {
+          let future = new Date();
+          future.setDate(future.getDate() + 7); // Ban for 7 days
+          updates.bannedUntil = future;
+        }
+        await updateDoc(doc(db, 'users', userId), updates);
+        showToast('User banned ' + (permanent ? 'permanently' : 'for 7 days'));
+      } catch (e) {
+        showToast('Error banning user');
+      }
+    });
+  };
+  
+  const handleResolveReport = async (reportId: string) => {
+    try {
+      await updateDoc(doc(db, 'reports', reportId), {
+        status: 'resolved'
+      });
+      showToast('Report marked as resolved');
+    } catch (e) {
+      showToast('Error resolving report');
+    }
+  };
+
+  const handleDeleteUser = async (userId: string) => {
+    showConfirm("Are you sure you want to delete this user?", async () => {
+      try {
+        await deleteDoc(doc(db, 'users', userId));
+        showToast('User deleted manually');
+      } catch (e) {
+        console.error(e);
+        showToast('Error deleting user');
+      }
+    });
+  }
+
+  if (!isAdmin) {
+    return (
+      <div className="flex-1 flex flex-col justify-center items-center text-red-500 font-bold bg-white dark:bg-black">
+        Access Denied - Authorized Personnel Only
+      </div>
+    );
+  }
+
+  const pendingRequests = users.filter(u => u.verificationStatus === 'pending');
+  const verifiedUsers = users.filter(u => u.isVerified);
+  const pendingReports = reports.filter(r => r.status !== 'resolved');
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="flex-1 flex flex-col min-h-0 bg-white dark:bg-black absolute inset-0 z-50">
+      <header className="flex items-center justify-between px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black/90 backdrop-blur-md sticky top-0 z-10 shrink-0">
+        <div className="flex items-center">
+          <button onClick={() => navigate(-1)} className="mr-3 p-1.5 rounded-full text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 hover:text-black dark:text-white transition-colors"><ChevronLeft size={24} /></button>
+          <span className="font-bold text-[16px] text-zinc-900 dark:text-zinc-100 flex items-center gap-2"><Trophy size={18} className="text-indigo-500" /> Admin Command Center</span>
+        </div>
+      </header>
+
+      <div className="flex gap-4 px-5 pt-4 shrink-0 overflow-x-auto no-scrollbar border-b border-zinc-200 dark:border-zinc-800">
+        {(['overview', 'verifications', 'verified', 'reports', 'users'] as const).map(t => (
+          <button 
+            key={t}
+            onClick={() => setTab(t)}
+            className={cn("pb-3 px-2 text-[14px] font-bold transition-colors border-b-2 whitespace-nowrap capitalize", tab === t ? "border-indigo-500 text-indigo-500" : "border-transparent text-zinc-500 dark:text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-700 dark:text-zinc-700 dark:text-zinc-300")}
+          >
+            {t} 
+            {t === 'verifications' && pendingRequests.length > 0 && <span className="ml-1 bg-red-500 text-black dark:text-white text-[10px] px-1.5 py-0.5 rounded-full">{pendingRequests.length}</span>}
+            {t === 'reports' && pendingReports.length > 0 && <span className="ml-1 bg-amber-500 text-black dark:text-white text-[10px] px-1.5 py-0.5 rounded-full">{pendingReports.length}</span>}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-5 py-6">
+        {tab === 'overview' && (
+          <div className="flex flex-col gap-6">
+            <h2 className="font-bold text-xl dark:text-white">Platform Health</h2>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-indigo-50 dark:bg-indigo-900/20 p-5 rounded-2xl border border-indigo-100 dark:border-indigo-800/30">
+                <p className="text-sm font-semibold text-indigo-600 dark:text-indigo-400 mb-1">Total Users</p>
+                <p className="text-4xl font-bold text-zinc-900 dark:text-zinc-100">{users.length}</p>
+              </div>
+              <div className="bg-emerald-50 dark:bg-emerald-900/20 p-5 rounded-2xl border border-emerald-100 dark:border-emerald-800/30">
+                <p className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 mb-1">Total Posts</p>
+                <p className="text-4xl font-bold text-zinc-900 dark:text-zinc-100">{posts.length}</p>
+              </div>
+              <div className="bg-rose-50 dark:bg-rose-900/20 p-5 rounded-2xl border border-rose-100 dark:border-rose-800/30">
+                <p className="text-sm font-semibold text-rose-600 dark:text-rose-400 mb-1">Pending Verifications</p>
+                <p className="text-4xl font-bold text-zinc-900 dark:text-zinc-100">{pendingRequests.length}</p>
+              </div>
+              <div className="bg-amber-50 dark:bg-amber-900/20 p-5 rounded-2xl border border-amber-100 dark:border-amber-800/30">
+                <p className="text-sm font-semibold text-amber-600 dark:text-amber-400 mb-1">Pending Reports</p>
+                <p className="text-4xl font-bold text-zinc-900 dark:text-zinc-100">{pendingReports.length}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {tab === 'verifications' && (
+          <div className="flex flex-col gap-4">
+            <h2 className="font-bold text-xl dark:text-white mb-2">Verification Queue ({pendingRequests.length})</h2>
+            {pendingRequests.map(user => (
+              <div key={user.id} className="p-4 border border-zinc-200 dark:border-zinc-800 rounded-xl flex flex-col gap-4 bg-white dark:bg-zinc-950">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <img src={user.avatar || undefined} className="w-12 h-12 rounded-full bg-zinc-200 dark:bg-zinc-800 object-cover border border-zinc-100 dark:border-zinc-800" />
+                    <div className="flex flex-col">
+                      <span className="font-bold text-zinc-900 dark:text-zinc-100 text-[15px]">{user.name}</span>
+                      <span className="text-zinc-500 dark:text-zinc-500 text-[13px] font-medium">@{user.username}</span>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => handleAction(user.id, 'accepted')} className="bg-emerald-500 hover:bg-emerald-600 text-black dark:text-white px-3 py-1.5 rounded-lg text-[13px] font-bold transition-colors">Accept</button>
+                    <button onClick={() => handleAction(user.id, 'rejected')} className="bg-red-500 hover:bg-red-600 text-black dark:text-white px-3 py-1.5 rounded-lg text-[13px] font-bold transition-colors">Reject</button>
+                  </div>
+                </div>
+                
+                {user.verificationData && (
+                  <div className="bg-zinc-50 dark:bg-zinc-900/50 rounded-lg p-3 text-[13px] border border-zinc-100 dark:border-zinc-800 grid grid-cols-2 gap-3">
+                    <div><span className="text-zinc-500 dark:text-zinc-500 block text-[11px] uppercase tracking-wider font-bold mb-0.5">Full Name</span> <span className="dark:text-zinc-200">{user.verificationData.fullName}</span></div>
+                    <div><span className="text-zinc-500 dark:text-zinc-500 block text-[11px] uppercase tracking-wider font-bold mb-0.5">Phone</span> <span className="dark:text-zinc-200">{user.verificationData.phoneNumber}</span></div>
+                    <div className="col-span-2"><span className="text-zinc-500 dark:text-zinc-500 block text-[11px] uppercase tracking-wider font-bold mb-0.5">Address</span> <span className="dark:text-zinc-200">{user.verificationData.address}</span></div>
+                    <div><span className="text-zinc-500 dark:text-zinc-500 block text-[11px] uppercase tracking-wider font-bold mb-0.5">NID / BID</span> <span className="dark:text-zinc-200">{user.verificationData.nidBid}</span></div>
+                    <div><span className="text-zinc-500 dark:text-zinc-500 block text-[11px] uppercase tracking-wider font-bold mb-0.5">DOB</span> <span className="dark:text-zinc-200">{user.verificationData.birthDate}</span></div>
+                    <div className="col-span-2 mt-2 pt-2 border-t border-zinc-200 dark:border-zinc-800 grid grid-cols-2 gap-3">
+                      <div><span className="text-amber-500 block text-[11px] uppercase tracking-wider font-bold mb-0.5">Nagad Number</span> <span className="dark:text-zinc-200 font-mono text-xs">{user.verificationData.nagadNumber}</span></div>
+                      <div><span className="text-amber-500 block text-[11px] uppercase tracking-wider font-bold mb-0.5">TrxID</span> <span className="dark:text-zinc-200 font-mono text-xs">{user.verificationData.transactionId}</span></div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+            {pendingRequests.length === 0 && (
+              <div className="text-center py-12 text-zinc-500 dark:text-zinc-500 border border-dashed border-zinc-300 dark:border-zinc-800 rounded-xl font-medium">
+                No pending requests in the queue
+              </div>
+            )}
+          </div>
+        )}
+
+        {tab === 'verified' && (
+          <div className="flex flex-col gap-4">
+             <h2 className="font-bold text-xl dark:text-white mb-2">Verified Users</h2>
+             <div className="flex flex-col gap-3">
+               {verifiedUsers.map(user => (
+                 <div key={user.id} className="p-4 border border-zinc-200 dark:border-zinc-800 rounded-xl flex items-center justify-between bg-white dark:bg-zinc-950">
+                   <div className="flex items-center gap-3">
+                     <img src={user.avatar || undefined} className="w-10 h-10 rounded-full bg-zinc-200 dark:bg-zinc-800 object-cover" />
+                     <div className="flex flex-col">
+                       <span className="font-bold text-zinc-900 dark:text-zinc-100 text-[14px] flex items-center gap-1">
+                         {user.name} <VerifiedBadge isVerified={true} />
+                       </span>
+                       <span className="text-zinc-500 dark:text-zinc-500 text-[12px] font-medium">@{user.username}</span>
+                     </div>
+                   </div>
+                   <div className="flex items-center gap-3">
+                     <div className="text-right flex flex-col text-[11px] font-semibold text-zinc-500 dark:text-zinc-500 dark:text-zinc-400">
+                       {user.verifiedUntil && (
+                         <span className="text-amber-600 dark:text-amber-400">
+                           Expires: {user.verifiedUntil?.toDate?.() ? user.verifiedUntil.toDate().toLocaleDateString() : (user.verifiedUntil as Date).toLocaleDateString()}
+                         </span>
+                       )}
+                     </div>
+                     <button onClick={() => handleRemoveVerified(user.id)} className="px-3 py-1.5 text-[12px] font-bold text-rose-500 bg-rose-50 dark:bg-rose-900/20 hover:bg-rose-100 dark:hover:bg-rose-900/40 rounded-lg transition-colors">Revoke</button>
+                   </div>
+                 </div>
+               ))}
+               {verifiedUsers.length === 0 && (
+                 <div className="text-center py-12 text-zinc-500 dark:text-zinc-500 border border-dashed border-zinc-300 dark:border-zinc-800 rounded-xl font-medium">
+                   No verified users found
+                 </div>
+               )}
+             </div>
+          </div>
+        )}
+
+        {tab === 'reports' && (
+          <div className="flex flex-col gap-4">
+             <h2 className="font-bold text-xl dark:text-white mb-2">User Reports</h2>
+             <div className="flex flex-col gap-3">
+               {reports.map(report => {
+                 const reportedUser = users.find(u => u.id === report.reportedUserId);
+                 return (
+                   <div key={report.id} className={cn("p-4 border rounded-xl flex flex-col gap-3", report.status === 'resolved' ? "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900" : "border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-900/10")}>
+                     <div className="flex items-center justify-between">
+                       <div className="flex items-center gap-2">
+                         <span className="font-bold text-[14px] text-zinc-900 dark:text-zinc-100">Report #{report.id.slice(-6)}</span>
+                         <span className={cn("px-2 py-0.5 rounded-full text-[10px] font-bold uppercase", report.status === 'resolved' ? "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400" : "bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400")}>
+                           {report.status}
+                         </span>
+                       </div>
+                       <span className="text-[12px] text-zinc-500 dark:text-zinc-500">{formatDistanceToNow(report.createdAt as Date)} ago</span>
+                     </div>
+                     <div className="text-[13px] text-zinc-700 dark:text-zinc-300">
+                       <span className="font-semibold text-zinc-900 dark:text-zinc-100">Reason:</span> {report.reason}
+                     </div>
+                     {reportedUser && (
+                       <div className="flex items-center gap-3 p-2 bg-white dark:bg-zinc-950 rounded-lg border border-zinc-100 dark:border-zinc-800">
+                         <img src={reportedUser.avatar || undefined} className="w-8 h-8 rounded-full" />
+                         <div className="flex flex-col flex-1">
+                           <span className="font-bold text-[13px]">{reportedUser.name}</span>
+                           <span className="text-[11px] text-zinc-500 dark:text-zinc-500">@{reportedUser.username} • {reportedUser.reportCount || 0} reports</span>
+                         </div>
+                       </div>
+                     )}
+                     {report.status !== 'resolved' && (
+                       <div className="flex gap-2 justify-end mt-2">
+                         <button onClick={() => handleResolveReport(report.id)} className="px-3 py-1.5 text-[12px] font-bold bg-emerald-500 hover:bg-emerald-600 text-black dark:text-white rounded-lg transition-colors">Resolve</button>
+                         {reportedUser && <button onClick={() => handleBanUser(reportedUser.id, false)} className="px-3 py-1.5 text-[12px] font-bold bg-orange-500 hover:bg-orange-600 text-black dark:text-white rounded-lg transition-colors">Ban 7 Days</button>}
+                         {reportedUser && <button onClick={() => handleBanUser(reportedUser.id, true)} className="px-3 py-1.5 text-[12px] font-bold bg-rose-500 hover:bg-rose-600 text-black dark:text-white rounded-lg transition-colors">Ban Permanently</button>}
+                       </div>
+                     )}
+                   </div>
+                 );
+               })}
+               {reports.length === 0 && (
+                 <div className="text-center py-12 text-zinc-500 dark:text-zinc-500 border border-dashed border-zinc-300 dark:border-zinc-800 rounded-xl font-medium">
+                   No reports found
+                 </div>
+               )}
+             </div>
+          </div>
+        )}
+
+        {tab === 'users' && (
+          <div className="flex flex-col gap-4">
+             <h2 className="font-bold text-xl dark:text-white mb-2">User Registry</h2>
+             <div className="flex flex-col gap-3">
+               {users.map(user => (
+                 <div key={user.id} className="p-4 border border-zinc-200 dark:border-zinc-800 rounded-xl flex items-center justify-between bg-white dark:bg-zinc-950">
+                   <div className="flex items-center gap-3">
+                     <img src={user.avatar || undefined} className="w-10 h-10 rounded-full bg-zinc-200 dark:bg-zinc-800 object-cover" />
+                     <div className="flex flex-col">
+                       <span className="font-bold text-zinc-900 dark:text-zinc-100 text-[14px] flex items-center gap-1">
+                         {user.name} {user.isVerified && <span className="w-3.5 h-3.5 bg-blue-500 rounded-full flex items-center justify-center text-black dark:text-white text-[8px]"><Check size={8} strokeWidth={4}/></span>}
+                       </span>
+                       <span className="text-zinc-500 dark:text-zinc-500 text-[12px] font-medium">
+                          @{user.username} 
+                          {user.bannedUntil && (user.bannedUntil?.toDate?.() || user.bannedUntil) > new Date() && <span className="text-rose-500 font-bold tracking-wide uppercase ml-1">Banned</span>}
+                       </span>
+                     </div>
+                   </div>
+                   <div className="flex items-center gap-3">
+                     <div className="text-right flex flex-col text-[11px] font-semibold text-zinc-500 dark:text-zinc-500 dark:text-zinc-400">
+                       <span>{user.followers?.length || 0} Followers</span>
+                       <span>ID: {user.id.slice(0, 6)}...</span>
+                     </div>
+                     <button onClick={() => handleDeleteUser(user.id)} className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"><X size={18} /></button>
+                   </div>
+                 </div>
+               ))}
+             </div>
+          </div>
+        )}
+      </div>
+    </motion.div>
+  );

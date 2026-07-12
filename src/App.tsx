@@ -374,6 +374,12 @@ interface AppState {
 export const AppContext = React.createContext<AppState | null>(null);
 export const useApp = () => React.useContext(AppContext)!;
 
+export const checkIsOnline = (lastActive: any) => {
+  if (!lastActive) return false;
+  const date = lastActive?.toDate?.() ? lastActive.toDate() : new Date(lastActive);
+  return (new Date().getTime() - date.getTime()) < 5 * 60 * 1000;
+};
+
 // --- COMPONENTS ---
 
 const SideNav = () => {
@@ -1001,7 +1007,7 @@ const SettingsScreen = () => {
             Delete account
           </button>
           
-          {['wwwrakibcom071@gmail.com', 'arbnyt60@gmail.com'].includes(auth.currentUser?.email || '') && (
+          {['wwwrakibcom071@gmail.com', 'arbnyt60@gmail.com', 'admin-001@fineword.com'].includes(auth.currentUser?.email || '') && (
             <button 
               onClick={() => navigate('/admin')}
               className="w-full mt-2 text-left bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800/30 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 p-4 rounded-xl font-bold flex items-center justify-between transition-colors"
@@ -1023,6 +1029,246 @@ const SettingsScreen = () => {
   );
 };
 
+
+const FeedScreen = () => {
+  const { posts, currentUser, followingIds } = useApp();
+  const [tab, setTab] = useState<'foryou' | 'following'>('foryou');
+  
+  const feedPosts = tab === 'foryou' 
+    ? posts 
+    : posts.filter(p => p.userId === currentUser?.id || followingIds.includes(p.userId));
+
+  return (
+    <div className="flex flex-col min-h-0 h-full">
+      <header className="sticky top-0 z-10 bg-white/80 dark:bg-black/80 backdrop-blur-md border-b border-zinc-200 dark:border-zinc-800">
+        <div className="px-4 pt-3 pb-1">
+          <h1 className="font-bold text-xl italic font-sans dark:text-white">FineFeed</h1>
+        </div>
+        <div className="flex gap-6 px-4 pb-2 mt-1">
+          <button onClick={() => setTab('foryou')} className={`font-bold text-sm transition-colors ${tab === 'foryou' ? 'text-black dark:text-white border-b-2 border-black dark:border-white pb-1' : 'text-zinc-500 dark:text-zinc-400 pb-1'}`}>For You</button>
+          <button onClick={() => setTab('following')} className={`font-bold text-sm transition-colors ${tab === 'following' ? 'text-black dark:text-white border-b-2 border-black dark:border-white pb-1' : 'text-zinc-500 dark:text-zinc-400 pb-1'}`}>Following</button>
+        </div>
+      </header>
+      <div className="flex-1 overflow-y-auto">
+        {feedPosts.map(post => (
+          <PostItem key={post.id} post={post} />
+        ))}
+        {feedPosts.length === 0 && (
+          <div className="p-8 text-center text-zinc-500">No posts to show.</div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const NotificationsScreen = () => {
+  const { currentUser } = useApp();
+  const [notifications, setNotifications] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    const q = query(collection(db, 'notifications'), where('userId', '==', currentUser.id), orderBy('createdAt', 'desc'));
+    const unsub = onSnapshot(q, snap => {
+      setNotifications(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+    return unsub;
+  }, [currentUser]);
+
+  return (
+    <div className="flex flex-col min-h-0 h-full">
+      <header className="sticky top-0 z-10 bg-white/80 dark:bg-black/80 backdrop-blur-md border-b border-zinc-200 dark:border-zinc-800 px-4 py-3">
+        <h1 className="font-bold text-lg dark:text-white">Notifications</h1>
+      </header>
+      <div className="flex-1 overflow-y-auto">
+        {notifications.map(notif => (
+          <div key={notif.id} className="p-4 border-b border-zinc-100 dark:border-zinc-900 flex gap-3 items-start">
+             <div className="text-sm dark:text-zinc-200">{notif.message}</div>
+          </div>
+        ))}
+        {notifications.length === 0 && <div className="p-8 text-center text-zinc-500">No notifications yet.</div>}
+      </div>
+    </div>
+  );
+};
+
+const SearchScreen = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const q = searchParams.get('q') || '';
+  const [queryText, setQueryText] = useState(q);
+  const { posts } = useApp();
+  const [users, setUsers] = useState<User[]>([]);
+
+  useEffect(() => {
+    getDocs(collection(db, 'users')).then(snap => {
+      setUsers(snap.docs.map(d => d.data() as User));
+    });
+  }, []);
+
+  const filteredUsers = users.filter(u => u.username.toLowerCase().includes(queryText.toLowerCase()) || u.name.toLowerCase().includes(queryText.toLowerCase()));
+  const filteredPosts = posts.filter(p => p.content.toLowerCase().includes(queryText.toLowerCase()));
+
+  return (
+    <div className="flex flex-col min-h-0 h-full">
+      <header className="sticky top-0 z-10 bg-white/80 dark:bg-black/80 backdrop-blur-md border-b border-zinc-200 dark:border-zinc-800 p-3">
+         <div className="relative">
+           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
+           <input 
+             type="text" 
+             value={queryText}
+             onChange={e => {
+               setQueryText(e.target.value);
+               setSearchParams(e.target.value ? { q: e.target.value } : {});
+             }}
+             placeholder="Search users, posts..."
+             className="w-full bg-zinc-100 dark:bg-zinc-900 border-none rounded-full py-2 pl-10 pr-4 text-sm dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
+           />
+         </div>
+      </header>
+      <div className="flex-1 overflow-y-auto">
+         {queryText && (
+           <>
+             {filteredUsers.length > 0 && (
+               <div className="p-4 border-b border-zinc-200 dark:border-zinc-800">
+                 <h2 className="font-bold text-sm text-zinc-500 mb-3">Users</h2>
+                 <div className="flex flex-col gap-3">
+                   {filteredUsers.map(u => (
+                     <Link to={`/${u.username}`} key={u.id} className="flex items-center gap-3">
+                       <img src={u.avatar || undefined} className="w-10 h-10 rounded-full bg-zinc-200 dark:bg-zinc-800 object-cover" />
+                       <div className="flex flex-col"><span className="font-bold text-sm dark:text-white">{u.name}</span><span className="text-zinc-500 text-xs">@{u.username}</span></div>
+                     </Link>
+                   ))}
+                 </div>
+               </div>
+             )}
+             <div className="p-4">
+               <h2 className="font-bold text-sm text-zinc-500 mb-3">Posts</h2>
+               {filteredPosts.map(p => <PostItem key={p.id} post={p} />)}
+             </div>
+           </>
+         )}
+      </div>
+    </div>
+  );
+};
+
+const CreatePostScreen = () => {
+  const { currentUser, showToast } = useApp();
+  const [content, setContent] = useState('');
+  const navigate = useNavigate();
+
+  const handlePost = async () => {
+    if (!content.trim() || !currentUser) return;
+    try {
+      await addDoc(collection(db, 'posts'), {
+        userId: currentUser.id,
+        content: content.trim(),
+        createdAt: serverTimestamp(),
+        likes: [],
+        commentCount: 0
+      });
+      showToast('Post created');
+      navigate('/');
+    } catch (e) {
+      showToast('Error creating post');
+    }
+  };
+
+  return (
+    <div className="flex flex-col h-full bg-white dark:bg-black">
+      <header className="flex items-center justify-between p-4 border-b border-zinc-200 dark:border-zinc-800">
+        <div className="flex items-center gap-3">
+          <button onClick={() => navigate(-1)} className="text-zinc-500 hover:text-black dark:hover:text-white"><X size={24} /></button>
+          <span className="font-bold dark:text-white">Create Post</span>
+        </div>
+        <button onClick={handlePost} disabled={!content.trim()} className="bg-indigo-500 text-white px-4 py-1.5 rounded-full font-bold text-sm disabled:opacity-50">Post</button>
+      </header>
+      <div className="p-4 flex-1">
+        <textarea
+          autoFocus
+          value={content}
+          onChange={e => setContent(e.target.value)}
+          placeholder="What's on your mind?"
+          className="w-full h-40 resize-none bg-transparent outline-none dark:text-white text-lg placeholder:text-zinc-400"
+        />
+      </div>
+    </div>
+  );
+};
+
+const ContestsScreen = () => {
+  return (
+    <div className="flex flex-col h-full bg-white dark:bg-black">
+      <header className="p-4 border-b border-zinc-200 dark:border-zinc-800"><h1 className="font-bold text-lg dark:text-white">Contests</h1></header>
+      <div className="p-8 text-center text-zinc-500">Coming soon</div>
+    </div>
+  );
+};
+
+const ContestDetailScreen = () => {
+  const navigate = useNavigate();
+  return (
+    <div className="flex flex-col h-full bg-white dark:bg-black">
+      <header className="p-4 flex items-center gap-3 border-b border-zinc-200 dark:border-zinc-800">
+        <button onClick={() => navigate(-1)}><ChevronLeft className="dark:text-white"/></button>
+        <h1 className="font-bold text-lg dark:text-white">Contest Details</h1>
+      </header>
+      <div className="p-8 text-center text-zinc-500">Coming soon</div>
+    </div>
+  );
+};
+
+const ChatListScreen = () => {
+  return (
+    <div className="flex flex-col h-full bg-white dark:bg-black">
+      <header className="p-4 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center">
+        <h1 className="font-bold text-lg dark:text-white">Messages</h1>
+        <Link to="/chat/group/create" className="text-indigo-500"><PlusSquare size={20}/></Link>
+      </header>
+      <div className="p-8 text-center text-zinc-500">No messages yet</div>
+    </div>
+  );
+};
+
+const CreateGroupChatScreen = () => {
+  const navigate = useNavigate();
+  return (
+    <div className="flex flex-col h-full bg-white dark:bg-black">
+      <header className="p-4 flex items-center gap-3 border-b border-zinc-200 dark:border-zinc-800">
+        <button onClick={() => navigate(-1)}><ChevronLeft className="dark:text-white"/></button>
+        <h1 className="font-bold text-lg dark:text-white">New Group</h1>
+      </header>
+      <div className="p-8 text-center text-zinc-500">Coming soon</div>
+    </div>
+  );
+};
+
+const ChatRoomScreen = () => {
+  const navigate = useNavigate();
+  return (
+    <div className="flex flex-col h-full bg-white dark:bg-black">
+      <header className="p-4 flex items-center gap-3 border-b border-zinc-200 dark:border-zinc-800">
+        <button onClick={() => navigate(-1)}><ChevronLeft className="dark:text-white"/></button>
+        <h1 className="font-bold text-lg dark:text-white">Chat</h1>
+      </header>
+      <div className="p-8 text-center text-zinc-500">Coming soon</div>
+    </div>
+  );
+};
+
+const EditProfileScreen = () => {
+  const navigate = useNavigate();
+  return (
+    <div className="flex flex-col h-full bg-white dark:bg-black">
+      <header className="p-4 flex items-center gap-3 border-b border-zinc-200 dark:border-zinc-800">
+        <button onClick={() => navigate(-1)}><ChevronLeft className="dark:text-white"/></button>
+        <h1 className="font-bold text-lg dark:text-white">Edit Profile</h1>
+      </header>
+      <div className="p-8 text-center text-zinc-500">Coming soon</div>
+    </div>
+  );
+};
+
+
 const AdminDashboardScreen = () => {
   const { posts, showToast, showConfirm } = useApp();
   const navigate = useNavigate();
@@ -1030,10 +1276,13 @@ const AdminDashboardScreen = () => {
   const [reports, setReports] = useState<Report[]>([]);
   const [tab, setTab] = useState<'overview' | 'verifications' | 'verified' | 'reports' | 'users'>('overview');
 
-  const isAdmin = ['wwwrakibcom071@gmail.com', 'arbnyt60@gmail.com'].includes(auth.currentUser?.email || '');
+  const isAdmin = ['wwwrakibcom071@gmail.com', 'arbnyt60@gmail.com', 'admin-001@fineword.com'].includes(auth.currentUser?.email || '');
 
   useEffect(() => {
-    if (!isAdmin) return;
+    if (!isAdmin) {
+      navigate('/');
+      return;
+    }
     const unsubUsers = onSnapshot(collection(db, 'users'), snap => {
       const u: User[] = [];
       snap.forEach(d => u.push(d.data() as User));
@@ -1047,7 +1296,7 @@ const AdminDashboardScreen = () => {
     }, e => console.error("Admin Reports error:", e));
     
     return () => { unsubUsers(); unsubReports(); };
-  }, [isAdmin]);
+  }, [isAdmin, navigate]);
 
   const handleAction = async (userId: string, action: 'accepted' | 'rejected') => {
     try {
@@ -1074,2582 +1323,321 @@ const AdminDashboardScreen = () => {
           actorId: auth.currentUser?.uid || 'system',
           type: 'system',
           message: 'Your verification request was not accepted. Please review your submitted details and try again.',
-          read: false,
-          createdAt: serverTimestamp()
-        });
-      } else if (action === 'accepted') {
-        const notifId = `sys_${Date.now()}_${Math.floor(Math.random() * 1000000)}`;
-        await setDoc(doc(db, 'notifications', notifId), {
-          id: notifId,
-          userId: userId,
-          actorId: auth.currentUser?.uid || 'system',
-          type: 'system',
-          message: 'Congratulations! Your verification request has been accepted. You are now verified.',
-          read: false,
-          createdAt: serverTimestamp()
+          createdAt: serverTimestamp(),
+          read: false
         });
       }
       
-      showToast('Verification request ' + action);
-    } catch (e) {
-      console.error(e);
-      showToast('Error processing request');
+      showToast(`Request ${action} successfully`);
+    } catch (error) {
+      console.error("Action error:", error);
+      showToast("Action failed");
     }
   };
 
+  const handleDeleteUser = async (userId: string) => {
+    showConfirm("Delete this user permanently? This cannot be undone.", async () => {
+      try {
+        await deleteDoc(doc(db, 'users', userId));
+        showToast("User deleted");
+      } catch (e) {
+        console.error(e);
+        showToast("Delete failed");
+      }
+    });
+  };
+
   const handleRemoveVerified = async (userId: string) => {
-    showConfirm("Are you sure you want to remove the verified mark from this user?", async () => {
-      try {
-        await updateDoc(doc(db, 'users', userId), {
-          isVerified: false,
-          verifiedUntil: null,
-          verificationStatus: 'none'
-        });
-        showToast('Verified mark removed');
-      } catch (e) {
-        showToast('Error removing verified mark');
-      }
+    showConfirm("Revoke verified status?", async () => {
+       try {
+         await updateDoc(doc(db, 'users', userId), {
+           isVerified: false,
+           verificationStatus: 'idle',
+           verifiedUntil: null
+         });
+         showToast("Status revoked");
+       } catch(e) {
+         console.error(e);
+         showToast("Failed");
+       }
     });
   };
-  
-  const handleBanUser = async (userId: string, permanent: boolean = false) => {
-    showConfirm(`Are you sure you want to ban this user ${permanent ? 'permanently' : 'for 7 days'}?`, async () => {
-      try {
-        const updates: any = {};
-        if (permanent) {
-          let future = new Date();
-          future.setFullYear(future.getFullYear() + 100);
-          updates.bannedUntil = future;
-        } else {
-          let future = new Date();
-          future.setDate(future.getDate() + 7); // Ban for 7 days
-          updates.bannedUntil = future;
-        }
-        await updateDoc(doc(db, 'users', userId), updates);
-        showToast('User banned ' + (permanent ? 'permanently' : 'for 7 days'));
-      } catch (e) {
-        showToast('Error banning user');
-      }
-    });
-  };
-  
+
   const handleResolveReport = async (reportId: string) => {
     try {
       await updateDoc(doc(db, 'reports', reportId), {
         status: 'resolved'
       });
-      showToast('Report marked as resolved');
-    } catch (e) {
-      showToast('Error resolving report');
+      showToast("Report marked as resolved");
+    } catch(e) {
+      console.error(e);
+      showToast("Failed to resolve");
     }
   };
 
-  const handleDeleteUser = async (userId: string) => {
-    showConfirm("Are you sure you want to delete this user?", async () => {
-      try {
-        await deleteDoc(doc(db, 'users', userId));
-        showToast('User deleted manually');
-      } catch (e) {
-        console.error(e);
-        showToast('Error deleting user');
-      }
+  const handleBanUser = async (userId: string, permanent: boolean) => {
+    showConfirm(`Ban user ${permanent ? 'permanently' : 'for 7 days'}?`, async () => {
+       try {
+         const updates: any = { isVerified: false, verificationStatus: 'idle' };
+         if (permanent) {
+            updates.bannedUntil = new Date(2100, 1, 1);
+         } else {
+            const until = new Date();
+            until.setDate(until.getDate() + 7);
+            updates.bannedUntil = until;
+         }
+         await updateDoc(doc(db, 'users', userId), updates);
+         showToast("User banned");
+       } catch (e) {
+         console.error(e);
+         showToast("Failed to ban user");
+       }
     });
-  }
-
-  if (!isAdmin) {
-    return (
-      <div className="flex-1 flex flex-col justify-center items-center text-red-500 font-bold bg-white dark:bg-black">
-        Access Denied - Authorized Personnel Only
-      </div>
-    );
-  }
+  };
 
   const pendingRequests = users.filter(u => u.verificationStatus === 'pending');
   const verifiedUsers = users.filter(u => u.isVerified);
-  const pendingReports = reports.filter(r => r.status !== 'resolved');
+  const pendingReports = reports.filter(r => r.status === 'pending');
+
+  if (!isAdmin) return null;
 
   return (
-    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="flex-1 flex flex-col min-h-0 bg-white dark:bg-black absolute inset-0 z-50">
-      <header className="flex items-center justify-between px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black/90 backdrop-blur-md sticky top-0 z-10 shrink-0">
-        <div className="flex items-center">
-          <button onClick={() => navigate(-1)} className="mr-3 p-1.5 rounded-full text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 hover:text-black dark:text-white transition-colors"><ChevronLeft size={24} /></button>
-          <span className="font-bold text-[16px] text-zinc-900 dark:text-zinc-100 flex items-center gap-2"><Trophy size={18} className="text-indigo-500" /> Admin Command Center</span>
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex-1 flex flex-col md:flex-row min-h-0 bg-zinc-50 dark:bg-zinc-950 absolute inset-0 z-50">
+      {/* Admin Sidebar (Desktop) */}
+      <div className="hidden md:flex w-[280px] shrink-0 bg-white dark:bg-zinc-900 border-r border-zinc-200 dark:border-zinc-800 flex-col h-full">
+        <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex items-center gap-3">
+          <div className="w-10 h-10 bg-indigo-500 rounded-xl flex items-center justify-center text-white font-bold text-xl"><Trophy size={20} /></div>
+          <div>
+            <h1 className="font-bold text-[16px] text-zinc-900 dark:text-zinc-100">Admin Panel</h1>
+            <p className="text-[12px] text-zinc-500">FineWord System</p>
+          </div>
         </div>
-      </header>
-
-      <div className="flex gap-4 px-5 pt-4 shrink-0 overflow-x-auto no-scrollbar border-b border-zinc-200 dark:border-zinc-800">
-        {(['overview', 'verifications', 'verified', 'reports', 'users'] as const).map(t => (
-          <button 
-            key={t}
-            onClick={() => setTab(t)}
-            className={cn("pb-3 px-2 text-[14px] font-bold transition-colors border-b-2 whitespace-nowrap capitalize", tab === t ? "border-indigo-500 text-indigo-500" : "border-transparent text-zinc-500 dark:text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-700 dark:text-zinc-700 dark:text-zinc-300")}
-          >
-            {t} 
-            {t === 'verifications' && pendingRequests.length > 0 && <span className="ml-1 bg-red-500 text-black dark:text-white text-[10px] px-1.5 py-0.5 rounded-full">{pendingRequests.length}</span>}
-            {t === 'reports' && pendingReports.length > 0 && <span className="ml-1 bg-amber-500 text-black dark:text-white text-[10px] px-1.5 py-0.5 rounded-full">{pendingReports.length}</span>}
-          </button>
-        ))}
+        <div className="flex-1 py-4 px-3 flex flex-col gap-1 overflow-y-auto">
+          {(['overview', 'verifications', 'verified', 'reports', 'users'] as const).map(t => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={cn("w-full text-left px-4 py-3 rounded-xl text-[14px] font-semibold transition-all flex items-center justify-between", tab === t ? "bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400" : "text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800/50")}
+            >
+              <span className="capitalize">{t}</span>
+              {t === 'verifications' && pendingRequests.length > 0 && <span className="bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full">{pendingRequests.length}</span>}
+              {t === 'reports' && pendingReports.length > 0 && <span className="bg-amber-500 text-white text-[10px] px-2 py-0.5 rounded-full">{pendingReports.length}</span>}
+            </button>
+          ))}
+        </div>
+        <div className="p-4 border-t border-zinc-200 dark:border-zinc-800">
+           <button onClick={() => navigate('/')} className="w-full flex items-center gap-2 justify-center px-4 py-3 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-900 dark:text-zinc-100 rounded-xl font-bold transition-colors">
+              <ChevronLeft size={18} /> Back to App
+           </button>
+        </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-5 py-6">
-        {tab === 'overview' && (
-          <div className="flex flex-col gap-6">
-            <h2 className="font-bold text-xl dark:text-white">Platform Health</h2>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="bg-indigo-50 dark:bg-indigo-900/20 p-5 rounded-2xl border border-indigo-100 dark:border-indigo-800/30">
-                <p className="text-sm font-semibold text-indigo-600 dark:text-indigo-400 mb-1">Total Users</p>
-                <p className="text-4xl font-bold text-zinc-900 dark:text-zinc-100">{users.length}</p>
-              </div>
-              <div className="bg-emerald-50 dark:bg-emerald-900/20 p-5 rounded-2xl border border-emerald-100 dark:border-emerald-800/30">
-                <p className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 mb-1">Total Posts</p>
-                <p className="text-4xl font-bold text-zinc-900 dark:text-zinc-100">{posts.length}</p>
-              </div>
-              <div className="bg-rose-50 dark:bg-rose-900/20 p-5 rounded-2xl border border-rose-100 dark:border-rose-800/30">
-                <p className="text-sm font-semibold text-rose-600 dark:text-rose-400 mb-1">Pending Verifications</p>
-                <p className="text-4xl font-bold text-zinc-900 dark:text-zinc-100">{pendingRequests.length}</p>
-              </div>
-              <div className="bg-amber-50 dark:bg-amber-900/20 p-5 rounded-2xl border border-amber-100 dark:border-amber-800/30">
-                <p className="text-sm font-semibold text-amber-600 dark:text-amber-400 mb-1">Pending Reports</p>
-                <p className="text-4xl font-bold text-zinc-900 dark:text-zinc-100">{pendingReports.length}</p>
-              </div>
-            </div>
+      {/* Admin Mobile Header */}
+      <div className="md:hidden flex flex-col bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 shrink-0">
+        <div className="flex items-center justify-between p-4 border-b border-zinc-200 dark:border-zinc-800">
+          <div className="flex items-center gap-3">
+             <button onClick={() => navigate('/')} className="p-2 -ml-2 text-zinc-500"><ChevronLeft size={24} /></button>
+             <h1 className="font-bold text-[16px] text-zinc-900 dark:text-zinc-100 flex items-center gap-2"><Trophy size={18} className="text-indigo-500"/> Admin</h1>
           </div>
-        )}
+        </div>
+        <div className="flex overflow-x-auto no-scrollbar px-2 py-2 gap-2">
+          {(['overview', 'verifications', 'verified', 'reports', 'users'] as const).map(t => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={cn("px-4 py-2 rounded-full text-[13px] font-bold whitespace-nowrap flex items-center gap-1.5 transition-colors", tab === t ? "bg-indigo-500 text-white" : "bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400")}
+            >
+              <span className="capitalize">{t}</span>
+              {t === 'verifications' && pendingRequests.length > 0 && <span className={cn("text-[10px] px-1.5 py-0.5 rounded-full", tab === t ? "bg-white/20 text-white" : "bg-red-500 text-white")}>{pendingRequests.length}</span>}
+              {t === 'reports' && pendingReports.length > 0 && <span className={cn("text-[10px] px-1.5 py-0.5 rounded-full", tab === t ? "bg-white/20 text-white" : "bg-amber-500 text-white")}>{pendingReports.length}</span>}
+            </button>
+          ))}
+        </div>
+      </div>
 
-        {tab === 'verifications' && (
-          <div className="flex flex-col gap-4">
-            <h2 className="font-bold text-xl dark:text-white mb-2">Verification Queue ({pendingRequests.length})</h2>
-            {pendingRequests.map(user => (
-              <div key={user.id} className="p-4 border border-zinc-200 dark:border-zinc-800 rounded-xl flex flex-col gap-4 bg-white dark:bg-zinc-950">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <img src={user.avatar || undefined} className="w-12 h-12 rounded-full bg-zinc-200 dark:bg-zinc-800 object-cover border border-zinc-100 dark:border-zinc-800" />
-                    <div className="flex flex-col">
-                      <span className="font-bold text-zinc-900 dark:text-zinc-100 text-[15px]">{user.name}</span>
-                      <span className="text-zinc-500 dark:text-zinc-500 text-[13px] font-medium">@{user.username}</span>
-                    </div>
+      {/* Admin Content Area */}
+      <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+        <header className="hidden md:flex h-[72px] shrink-0 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 items-center px-8">
+           <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 capitalize">{tab}</h2>
+        </header>
+
+        <div className="flex-1 overflow-y-auto p-4 md:p-8">
+          <div className="max-w-5xl mx-auto">
+            {tab === 'overview' && (
+              <div className="flex flex-col gap-8">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
+                  <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex flex-col gap-2">
+                    <p className="text-xs md:text-sm font-semibold text-zinc-500 uppercase tracking-wider">Total Users</p>
+                    <p className="text-3xl md:text-4xl font-black text-indigo-600 dark:text-indigo-400">{users.length}</p>
                   </div>
-                  <div className="flex gap-2">
-                    <button onClick={() => handleAction(user.id, 'accepted')} className="bg-emerald-500 hover:bg-emerald-600 text-black dark:text-white px-3 py-1.5 rounded-lg text-[13px] font-bold transition-colors">Accept</button>
-                    <button onClick={() => handleAction(user.id, 'rejected')} className="bg-red-500 hover:bg-red-600 text-black dark:text-white px-3 py-1.5 rounded-lg text-[13px] font-bold transition-colors">Reject</button>
+                  <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex flex-col gap-2">
+                    <p className="text-xs md:text-sm font-semibold text-zinc-500 uppercase tracking-wider">Total Posts</p>
+                    <p className="text-3xl md:text-4xl font-black text-emerald-600 dark:text-emerald-400">{posts.length}</p>
+                  </div>
+                  <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex flex-col gap-2">
+                    <p className="text-xs md:text-sm font-semibold text-zinc-500 uppercase tracking-wider">Pending Verifications</p>
+                    <p className="text-3xl md:text-4xl font-black text-rose-600 dark:text-rose-400">{pendingRequests.length}</p>
+                  </div>
+                  <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex flex-col gap-2">
+                    <p className="text-xs md:text-sm font-semibold text-zinc-500 uppercase tracking-wider">Pending Reports</p>
+                    <p className="text-3xl md:text-4xl font-black text-amber-600 dark:text-amber-400">{pendingReports.length}</p>
                   </div>
                 </div>
-                
-                {user.verificationData && (
-                  <div className="bg-zinc-50 dark:bg-zinc-900/50 rounded-lg p-3 text-[13px] border border-zinc-100 dark:border-zinc-800 grid grid-cols-2 gap-3">
-                    <div><span className="text-zinc-500 dark:text-zinc-500 block text-[11px] uppercase tracking-wider font-bold mb-0.5">Full Name</span> <span className="dark:text-zinc-200">{user.verificationData.fullName}</span></div>
-                    <div><span className="text-zinc-500 dark:text-zinc-500 block text-[11px] uppercase tracking-wider font-bold mb-0.5">Phone</span> <span className="dark:text-zinc-200">{user.verificationData.phoneNumber}</span></div>
-                    <div className="col-span-2"><span className="text-zinc-500 dark:text-zinc-500 block text-[11px] uppercase tracking-wider font-bold mb-0.5">Address</span> <span className="dark:text-zinc-200">{user.verificationData.address}</span></div>
-                    <div><span className="text-zinc-500 dark:text-zinc-500 block text-[11px] uppercase tracking-wider font-bold mb-0.5">NID / BID</span> <span className="dark:text-zinc-200">{user.verificationData.nidBid}</span></div>
-                    <div><span className="text-zinc-500 dark:text-zinc-500 block text-[11px] uppercase tracking-wider font-bold mb-0.5">DOB</span> <span className="dark:text-zinc-200">{user.verificationData.birthDate}</span></div>
-                    <div className="col-span-2 mt-2 pt-2 border-t border-zinc-200 dark:border-zinc-800 grid grid-cols-2 gap-3">
-                      <div><span className="text-amber-500 block text-[11px] uppercase tracking-wider font-bold mb-0.5">Nagad Number</span> <span className="dark:text-zinc-200 font-mono text-xs">{user.verificationData.nagadNumber}</span></div>
-                      <div><span className="text-amber-500 block text-[11px] uppercase tracking-wider font-bold mb-0.5">TrxID</span> <span className="dark:text-zinc-200 font-mono text-xs">{user.verificationData.transactionId}</span></div>
+              </div>
+            )}
+
+            {tab === 'verifications' && (
+              <div className="flex flex-col gap-4">
+                {pendingRequests.map(user => (
+                  <div key={user.id} className="p-4 md:p-6 border border-zinc-200 dark:border-zinc-800 rounded-2xl flex flex-col gap-4 md:gap-6 bg-white dark:bg-zinc-900 shadow-sm">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                      <div className="flex items-center gap-4">
+                        <img src={user.avatar || undefined} className="w-12 h-12 md:w-14 md:h-14 rounded-full bg-zinc-200 dark:bg-zinc-800 object-cover border border-zinc-100 dark:border-zinc-800" />
+                        <div className="flex flex-col">
+                          <span className="font-bold text-zinc-900 dark:text-zinc-100 text-base md:text-lg">{user.name}</span>
+                          <span className="text-zinc-500 dark:text-zinc-500 text-xs md:text-sm font-medium">@{user.username}</span>
+                        </div>
+                      </div>
+                      <div className="flex gap-2 md:gap-3">
+                        <button onClick={() => handleAction(user.id, 'accepted')} className="flex-1 md:flex-none bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 md:px-5 md:py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all shadow-sm">Approve</button>
+                        <button onClick={() => handleAction(user.id, 'rejected')} className="flex-1 md:flex-none bg-rose-50 hover:bg-rose-100 text-rose-600 dark:bg-rose-500/10 dark:hover:bg-rose-500/20 dark:text-rose-400 px-4 py-2 md:px-5 md:py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all">Reject</button>
+                      </div>
                     </div>
+                    
+                    {user.verificationData && (
+                      <div className="bg-zinc-50 dark:bg-zinc-950 rounded-xl p-4 md:p-5 border border-zinc-100 dark:border-zinc-800 grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
+                        <div><span className="text-zinc-400 block text-[10px] uppercase tracking-wider font-bold mb-1">Full Name</span> <span className="dark:text-zinc-200 font-medium text-xs md:text-sm">{user.verificationData.fullName}</span></div>
+                        <div><span className="text-zinc-400 block text-[10px] uppercase tracking-wider font-bold mb-1">Phone</span> <span className="dark:text-zinc-200 font-medium text-xs md:text-sm">{user.verificationData.phoneNumber}</span></div>
+                        <div className="col-span-2"><span className="text-zinc-400 block text-[10px] uppercase tracking-wider font-bold mb-1">Address</span> <span className="dark:text-zinc-200 font-medium text-xs md:text-sm">{user.verificationData.address}</span></div>
+                        <div><span className="text-zinc-400 block text-[10px] uppercase tracking-wider font-bold mb-1">NID / BID</span> <span className="dark:text-zinc-200 font-medium text-xs md:text-sm">{user.verificationData.nidBid}</span></div>
+                        <div><span className="text-zinc-400 block text-[10px] uppercase tracking-wider font-bold mb-1">DOB</span> <span className="dark:text-zinc-200 font-medium text-xs md:text-sm">{user.verificationData.birthDate}</span></div>
+                        <div><span className="text-amber-500 block text-[10px] uppercase tracking-wider font-bold mb-1">Nagad Number</span> <span className="dark:text-zinc-200 font-mono text-xs md:text-sm">{user.verificationData.nagadNumber}</span></div>
+                        <div><span className="text-amber-500 block text-[10px] uppercase tracking-wider font-bold mb-1">TrxID</span> <span className="dark:text-zinc-200 font-mono text-xs md:text-sm">{user.verificationData.transactionId}</span></div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {pendingRequests.length === 0 && (
+                  <div className="text-center py-20 text-zinc-400 dark:text-zinc-600 border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-2xl font-medium text-lg">
+                    No pending requests in the queue
                   </div>
                 )}
               </div>
-            ))}
-            {pendingRequests.length === 0 && (
-              <div className="text-center py-12 text-zinc-500 dark:text-zinc-500 border border-dashed border-zinc-300 dark:border-zinc-800 rounded-xl font-medium">
-                No pending requests in the queue
-              </div>
             )}
-          </div>
-        )}
 
-        {tab === 'verified' && (
-          <div className="flex flex-col gap-4">
-             <h2 className="font-bold text-xl dark:text-white mb-2">Verified Users</h2>
-             <div className="flex flex-col gap-3">
-               {verifiedUsers.map(user => (
-                 <div key={user.id} className="p-4 border border-zinc-200 dark:border-zinc-800 rounded-xl flex items-center justify-between bg-white dark:bg-zinc-950">
-                   <div className="flex items-center gap-3">
-                     <img src={user.avatar || undefined} className="w-10 h-10 rounded-full bg-zinc-200 dark:bg-zinc-800 object-cover" />
-                     <div className="flex flex-col">
-                       <span className="font-bold text-zinc-900 dark:text-zinc-100 text-[14px] flex items-center gap-1">
-                         {user.name} <VerifiedBadge isVerified={true} />
-                       </span>
-                       <span className="text-zinc-500 dark:text-zinc-500 text-[12px] font-medium">@{user.username}</span>
+            {tab === 'verified' && (
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                 {verifiedUsers.map(user => (
+                   <div key={user.id} className="p-4 md:p-5 border border-zinc-200 dark:border-zinc-800 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white dark:bg-zinc-900 shadow-sm">
+                     <div className="flex items-center gap-4">
+                       <img src={user.avatar || undefined} className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-zinc-200 dark:bg-zinc-800 object-cover" />
+                       <div className="flex flex-col">
+                         <span className="font-bold text-zinc-900 dark:text-zinc-100 text-[14px] md:text-[15px] flex items-center gap-1.5">
+                           {user.name} <VerifiedBadge isVerified={true} />
+                         </span>
+                         <span className="text-zinc-500 text-[12px] md:text-[13px] font-medium">@{user.username}</span>
+                       </div>
+                     </div>
+                     <div className="flex items-center justify-between md:justify-end gap-4 w-full md:w-auto">
+                       <div className="text-left md:text-right flex flex-col text-[11px] md:text-[12px] font-semibold text-zinc-400">
+                         {user.verifiedUntil && (
+                           <span className="text-amber-600 dark:text-amber-400">
+                             Expires: {user.verifiedUntil?.toDate?.() ? user.verifiedUntil.toDate().toLocaleDateString() : (user.verifiedUntil as Date).toLocaleDateString()}
+                           </span>
+                         )}
+                       </div>
+                       <button onClick={() => handleRemoveVerified(user.id)} className="px-3 py-1.5 md:px-4 md:py-2 text-xs md:text-sm font-bold text-rose-600 bg-rose-50 dark:bg-rose-500/10 hover:bg-rose-100 dark:hover:bg-rose-500/20 rounded-xl transition-all">Revoke</button>
                      </div>
                    </div>
-                   <div className="flex items-center gap-3">
-                     <div className="text-right flex flex-col text-[11px] font-semibold text-zinc-500 dark:text-zinc-500 dark:text-zinc-400">
-                       {user.verifiedUntil && (
-                         <span className="text-amber-600 dark:text-amber-400">
-                           Expires: {user.verifiedUntil?.toDate?.() ? user.verifiedUntil.toDate().toLocaleDateString() : (user.verifiedUntil as Date).toLocaleDateString()}
-                         </span>
+                 ))}
+                 {verifiedUsers.length === 0 && (
+                   <div className="col-span-full text-center py-20 text-zinc-400 dark:text-zinc-600 border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-2xl font-medium text-lg">
+                     No verified users found
+                   </div>
+                 )}
+              </div>
+            )}
+
+            {tab === 'reports' && (
+              <div className="flex flex-col gap-4">
+                 {reports.map(report => {
+                   const reportedUser = users.find(u => u.id === report.reportedUserId);
+                   return (
+                     <div key={report.id} className={cn("p-4 md:p-6 border rounded-2xl flex flex-col gap-4 shadow-sm transition-colors", report.status === 'resolved' ? "border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900" : "border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-900/10")}>
+                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                         <div className="flex items-center gap-3">
+                           <span className="font-black text-base md:text-lg text-zinc-900 dark:text-zinc-100">Report #{report.id.slice(-6).toUpperCase()}</span>
+                           <span className={cn("px-2 py-0.5 md:px-3 md:py-1 rounded-full text-[10px] md:text-[11px] font-black uppercase tracking-wider", report.status === 'resolved' ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400" : "bg-amber-200 text-amber-800 dark:bg-amber-500/20 dark:text-amber-400")}>
+                             {report.status}
+                           </span>
+                         </div>
+                         <span className="text-xs md:text-sm font-medium text-zinc-500 dark:text-zinc-400">{formatDistanceToNow(report.createdAt as Date)} ago</span>
+                       </div>
+                       <div className="text-[14px] md:text-[15px] text-zinc-800 dark:text-zinc-200 bg-white/50 dark:bg-black/20 p-3 md:p-4 rounded-xl">
+                         <span className="font-bold block mb-1 text-zinc-500 dark:text-zinc-400 text-[10px] md:text-xs uppercase">Report Reason</span> 
+                         {report.reason}
+                       </div>
+                       {reportedUser && (
+                         <div className="flex items-center gap-3 md:gap-4 p-3 md:p-4 bg-white dark:bg-zinc-950 rounded-xl border border-zinc-200 dark:border-zinc-800">
+                           <img src={reportedUser.avatar || undefined} className="w-10 h-10 md:w-12 md:h-12 rounded-full" />
+                           <div className="flex flex-col flex-1">
+                             <span className="font-bold text-[14px] md:text-[15px]">{reportedUser.name}</span>
+                             <span className="text-[12px] md:text-[13px] text-zinc-500">@{reportedUser.username} • {reportedUser.reportCount || 0} reports</span>
+                           </div>
+                         </div>
+                       )}
+                       {report.status !== 'resolved' && (
+                         <div className="flex flex-wrap gap-2 md:gap-3 justify-end mt-2">
+                           <button onClick={() => handleResolveReport(report.id)} className="px-4 py-2 text-xs md:text-sm font-bold bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl transition-all shadow-sm">Mark Resolved</button>
+                           {reportedUser && <button onClick={() => handleBanUser(reportedUser.id, false)} className="px-4 py-2 text-xs md:text-sm font-bold bg-orange-500 hover:bg-orange-600 text-white rounded-xl transition-all shadow-sm">Ban 7 Days</button>}
+                           {reportedUser && <button onClick={() => handleBanUser(reportedUser.id, true)} className="px-4 py-2 text-xs md:text-sm font-bold bg-rose-500 hover:bg-rose-600 text-white rounded-xl transition-all shadow-sm">Ban Permanently</button>}
+                         </div>
                        )}
                      </div>
-                     <button onClick={() => handleRemoveVerified(user.id)} className="px-3 py-1.5 text-[12px] font-bold text-rose-500 bg-rose-50 dark:bg-rose-900/20 hover:bg-rose-100 dark:hover:bg-rose-900/40 rounded-lg transition-colors">Revoke</button>
-                   </div>
-                 </div>
-               ))}
-               {verifiedUsers.length === 0 && (
-                 <div className="text-center py-12 text-zinc-500 dark:text-zinc-500 border border-dashed border-zinc-300 dark:border-zinc-800 rounded-xl font-medium">
-                   No verified users found
-                 </div>
-               )}
-             </div>
-          </div>
-        )}
-
-        {tab === 'reports' && (
-          <div className="flex flex-col gap-4">
-             <h2 className="font-bold text-xl dark:text-white mb-2">User Reports</h2>
-             <div className="flex flex-col gap-3">
-               {reports.map(report => {
-                 const reportedUser = users.find(u => u.id === report.reportedUserId);
-                 return (
-                   <div key={report.id} className={cn("p-4 border rounded-xl flex flex-col gap-3", report.status === 'resolved' ? "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900" : "border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-900/10")}>
-                     <div className="flex items-center justify-between">
-                       <div className="flex items-center gap-2">
-                         <span className="font-bold text-[14px] text-zinc-900 dark:text-zinc-100">Report #{report.id.slice(-6)}</span>
-                         <span className={cn("px-2 py-0.5 rounded-full text-[10px] font-bold uppercase", report.status === 'resolved' ? "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400" : "bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400")}>
-                           {report.status}
-                         </span>
-                       </div>
-                       <span className="text-[12px] text-zinc-500 dark:text-zinc-500">{formatDistanceToNow(report.createdAt as Date)} ago</span>
-                     </div>
-                     <div className="text-[13px] text-zinc-700 dark:text-zinc-300">
-                       <span className="font-semibold text-zinc-900 dark:text-zinc-100">Reason:</span> {report.reason}
-                     </div>
-                     {reportedUser && (
-                       <div className="flex items-center gap-3 p-2 bg-white dark:bg-zinc-950 rounded-lg border border-zinc-100 dark:border-zinc-800">
-                         <img src={reportedUser.avatar || undefined} className="w-8 h-8 rounded-full" />
-                         <div className="flex flex-col flex-1">
-                           <span className="font-bold text-[13px]">{reportedUser.name}</span>
-                           <span className="text-[11px] text-zinc-500 dark:text-zinc-500">@{reportedUser.username} • {reportedUser.reportCount || 0} reports</span>
-                         </div>
-                       </div>
-                     )}
-                     {report.status !== 'resolved' && (
-                       <div className="flex gap-2 justify-end mt-2">
-                         <button onClick={() => handleResolveReport(report.id)} className="px-3 py-1.5 text-[12px] font-bold bg-emerald-500 hover:bg-emerald-600 text-black dark:text-white rounded-lg transition-colors">Resolve</button>
-                         {reportedUser && <button onClick={() => handleBanUser(reportedUser.id, false)} className="px-3 py-1.5 text-[12px] font-bold bg-orange-500 hover:bg-orange-600 text-black dark:text-white rounded-lg transition-colors">Ban 7 Days</button>}
-                         {reportedUser && <button onClick={() => handleBanUser(reportedUser.id, true)} className="px-3 py-1.5 text-[12px] font-bold bg-rose-500 hover:bg-rose-600 text-black dark:text-white rounded-lg transition-colors">Ban Permanently</button>}
-                       </div>
-                     )}
-                   </div>
-                 );
-               })}
-               {reports.length === 0 && (
-                 <div className="text-center py-12 text-zinc-500 dark:text-zinc-500 border border-dashed border-zinc-300 dark:border-zinc-800 rounded-xl font-medium">
-                   No reports found
-                 </div>
-               )}
-             </div>
-          </div>
-        )}
-
-        {tab === 'users' && (
-          <div className="flex flex-col gap-4">
-             <h2 className="font-bold text-xl dark:text-white mb-2">User Registry</h2>
-             <div className="flex flex-col gap-3">
-               {users.map(user => (
-                 <div key={user.id} className="p-4 border border-zinc-200 dark:border-zinc-800 rounded-xl flex items-center justify-between bg-white dark:bg-zinc-950">
-                   <div className="flex items-center gap-3">
-                     <img src={user.avatar || undefined} className="w-10 h-10 rounded-full bg-zinc-200 dark:bg-zinc-800 object-cover" />
-                     <div className="flex flex-col">
-                       <span className="font-bold text-zinc-900 dark:text-zinc-100 text-[14px] flex items-center gap-1">
-                         {user.name} {user.isVerified && <span className="w-3.5 h-3.5 bg-blue-500 rounded-full flex items-center justify-center text-black dark:text-white text-[8px]"><Check size={8} strokeWidth={4}/></span>}
-                       </span>
-                       <span className="text-zinc-500 dark:text-zinc-500 text-[12px] font-medium">
-                          @{user.username} 
-                          {user.bannedUntil && (user.bannedUntil?.toDate?.() || user.bannedUntil) > new Date() && <span className="text-rose-500 font-bold tracking-wide uppercase ml-1">Banned</span>}
-                       </span>
-                     </div>
-                   </div>
-                   <div className="flex items-center gap-3">
-                     <div className="text-right flex flex-col text-[11px] font-semibold text-zinc-500 dark:text-zinc-500 dark:text-zinc-400">
-                       <span>{user.followers?.length || 0} Followers</span>
-                       <span>ID: {user.id.slice(0, 6)}...</span>
-                     </div>
-                     <button onClick={() => handleDeleteUser(user.id)} className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"><X size={18} /></button>
-                   </div>
-                 </div>
-               ))}
-             </div>
-          </div>
-        )}
-      </div>
-    </motion.div>
-  );
-};
-
-const EditProfileScreen = () => {
-  const { currentUser, updateProfile, showToast } = useApp();
-  const navigate = useNavigate();
-  const [name, setName] = useState(currentUser?.name || '');
-  const [username, setUsername] = useState(currentUser?.username || '');
-  const [bio, setBio] = useState(currentUser?.bio || '');
-  const [avatar, setAvatar] = useState(currentUser?.avatar || '');
-  const [coverPhoto, setCoverPhoto] = useState(currentUser?.coverPhoto || '');
-  const [hideBadges, setHideBadges] = useState(currentUser?.hideBadges || false);
-  const [activeBadgeId, setActiveBadgeId] = useState(currentUser?.activeBadgeId || '');
-  const [isUploading, setIsUploading] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-
-  const handleSave = async () => {
-    if (!username.trim() || !name.trim()) {
-      showToast('Name and username are required');
-      return;
-    }
-    
-    setIsSaving(true);
-    let finalUsername = username.trim().toLowerCase();
-    
-    if (finalUsername !== currentUser?.username) {
-       const qUser = query(collection(db, 'users'), where('username', '==', finalUsername));
-       const docs = await getDocs(qUser);
-       if (!docs.empty) {
-           showToast('Username already taken');
-           setIsSaving(false);
-           return;
-       }
-    }
-    
-    try {
-      await updateProfile({ 
-        name, 
-        username: finalUsername, 
-        bio, 
-        avatar, 
-        coverPhoto,
-        hideBadges, 
-        activeBadgeId: activeBadgeId || null
-      });
-      showToast('Profile updated!');
-      setIsSaving(false);
-      navigate('/profile');
-    } catch (e: any) {
-      showToast('Error saving profile');
-      setIsSaving(false);
-    }
-  };
-
-  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !currentUser) return;
-    
-    setIsUploading(true);
-    try {
-      const resizedBase64 = await resizeImage(file, 400, 400);
-      setAvatar(resizedBase64);
-    } catch (error) {
-      console.error("Avatar resize error", error);
-      showToast('Error resizing avatar');
-    }
-    setIsUploading(false);
-  };
-
-  const handleCoverPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !currentUser) return;
-    
-    setIsUploading(true);
-    try {
-      const resizedBase64 = await resizeImage(file, 1200, 600);
-      setCoverPhoto(resizedBase64);
-    } catch (error) {
-      console.error("Cover photo resize error", error);
-      showToast('Error resizing cover photo');
-    }
-    setIsUploading(false);
-  };
-
-  return (
-    <motion.div initial={{ x: 50, opacity: 0 }} animate={{ x: 0, opacity: 1 }} className="flex-1 flex flex-col min-h-0 bg-white dark:bg-black absolute inset-0 z-50">
-      <header className="flex items-center justify-between px-5 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black/90 backdrop-blur-md sticky top-0 z-10 shrink-0">
-        <button onClick={() => navigate(-1)} className="text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 hover:text-black dark:text-white transition-colors"><ChevronLeft size={24} /></button>
-        <span className="font-bold text-[15px] tracking-wide text-zinc-900 dark:text-zinc-100">Edit Profile</span>
-        <button onClick={handleSave} disabled={isUploading || isSaving} className="font-bold text-[13px] uppercase tracking-wider text-indigo-400 hover:text-indigo-300 disabled:opacity-50">Save</button>
-      </header>
-
-      <div className="flex-1 overflow-y-auto px-5 py-6 flex flex-col gap-6">
-        <div className="flex flex-col gap-4">
-          <div className="relative w-full h-32 sm:h-48 bg-zinc-200 dark:bg-zinc-800 rounded-xl overflow-hidden group">
-            {coverPhoto ? (
-              <img src={coverPhoto} alt="Cover" className={cn("w-full h-full object-cover", isUploading && "opacity-50 animate-pulse")} />
-            ) : (
-              <div className="w-full h-full flex flex-col items-center justify-center text-zinc-500">
-                <ImageIcon size={32} className="mb-2 opacity-50" />
-                <span className="text-xs uppercase font-bold tracking-wider">No Cover Photo</span>
-              </div>
-            )}
-            <label className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer text-white text-xs uppercase font-bold tracking-wider">
-              {isUploading ? 'Uploading...' : 'Change Cover'}
-              <input type="file" accept="image/*" className="hidden" onChange={handleCoverPhotoUpload} disabled={isUploading} />
-            </label>
-          </div>
-          
-          <div className="flex flex-col items-center -mt-12 sm:-mt-16 relative z-10">
-            <img src={avatar || undefined} alt="Profile" className={cn("w-24 h-24 rounded-full bg-zinc-200 dark:bg-zinc-800 object-cover ring-4 ring-white dark:ring-black", isUploading && "opacity-50 animate-pulse")} />
-            <label className="text-indigo-400 font-bold text-[13px] mt-3 cursor-pointer hover:text-indigo-300 bg-white/80 dark:bg-black/80 backdrop-blur px-3 py-1 rounded-full shadow-sm">
-              {isUploading ? 'Uploading...' : 'Change Avatar'}
-              <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} disabled={isUploading} />
-            </label>
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-2">
-          <label className="text-[12px] uppercase tracking-wider font-bold text-zinc-500 dark:text-zinc-500 px-1">Name</label>
-          <div className="bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-3 rounded-xl">
-            <input type="text" value={name} onChange={e => setName(e.target.value)} className="bg-transparent w-full outline-none text-black dark:text-white text-[15px]" />
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-2">
-          <label className="text-[12px] uppercase tracking-wider font-bold text-zinc-500 dark:text-zinc-500 px-1">Username</label>
-          <div className="bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-3 rounded-xl flex items-center">
-            <span className="text-zinc-500 dark:text-zinc-500 mr-1">@</span>
-            <input type="text" value={username} onChange={e => setUsername(e.target.value)} className="bg-transparent flex-1 outline-none text-black dark:text-white text-[15px]" />
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-2">
-          <label className="text-[12px] uppercase tracking-wider font-bold text-zinc-500 dark:text-zinc-500 px-1">Bio</label>
-          <div className="bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-3 rounded-xl">
-            <textarea value={bio} onChange={e => setBio(e.target.value)} className="bg-transparent w-full outline-none text-black dark:text-white text-[15px] resize-none h-24" />
-          </div>
-        </div>
-
-        {currentUser?.badges && currentUser.badges.length > 0 && (
-          <div className="flex flex-col gap-2">
-            <label className="text-[12px] uppercase tracking-wider font-bold text-zinc-500 dark:text-zinc-500 px-1">Active Badge</label>
-            <div className="bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-3 rounded-xl">
-              <select value={activeBadgeId} onChange={(e) => setActiveBadgeId(e.target.value)} className="bg-transparent w-full outline-none text-black dark:text-white text-[15px]">
-                <option value="" className="text-black">No Badge</option>
-                {currentUser.badges.map(b => (
-                  <option key={b.id} value={b.id} className="text-black">{b.icon} {b.name}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-        )}
-
-        <div className="flex items-center justify-between p-1 mt-2">
-          <span className="font-bold text-[14px]">Hide All Badges</span>
-          <button 
-            onClick={() => setHideBadges(!hideBadges)} 
-            className="w-12 h-6 bg-zinc-300 dark:bg-zinc-300 dark:bg-zinc-700 rounded-full relative transition-colors shadow-inner"
-            style={{ backgroundColor: hideBadges ? '#6366f1' : undefined }}
-          >
-            <div className={cn("absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform shadow-sm", hideBadges && "translate-x-6")} />
-          </button>
-        </div>
-      </div>
-    </motion.div>
-  );
-};
-
-
-const FollowListModal = ({ isOpen, onClose, title, users }: { isOpen: boolean, onClose: () => void, title: string, users: User[] }) => {
-  if (!isOpen) return null;
-  return (
-    <div className="fixed inset-0 z-[100] bg-white dark:bg-transparent/50 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-white dark:bg-zinc-900 w-full max-w-[320px] max-h-[70vh] rounded-2xl shadow-xl flex flex-col relative overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-        <div className="flex items-center justify-between p-4 border-b border-zinc-200 dark:border-zinc-800">
-          <h2 className="font-bold text-[15px]">{title}</h2>
-          <button onClick={onClose} className="p-1 rounded-full text-zinc-500 dark:text-zinc-500 hover:text-black dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-          </button>
-        </div>
-        <div className="overflow-y-auto p-4 flex flex-col gap-3">
-          {users.map(u => (
-            <Link key={u.id} to={`/${u.username}`} onClick={onClose} className="flex items-center gap-3">
-              <img src={u.avatar || undefined} alt="" className="w-10 h-10 rounded-full object-cover bg-zinc-200 dark:bg-zinc-800 shrink-0" />
-              <div className="min-w-0 flex-1">
-                <div className="font-bold text-[14px] truncate">{u.username}</div>
-                <div className="text-[12px] text-zinc-500 dark:text-zinc-500 truncate">{u.name}</div>
-              </div>
-            </Link>
-          ))}
-          {users.length === 0 && <div className="text-zinc-500 dark:text-zinc-500 text-center py-4 text-[13px]">List is empty</div>}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const StoryCreatorModal = ({ onClose }: { onClose: () => void }) => {
-  const { currentUser, showToast } = useApp();
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [backgroundColor, setBackgroundColor] = useState<string>('#9333ea'); // default purple
-  const [isUploading, setIsUploading] = useState(false);
-  const [text, setText] = useState('');
-  const [isAddingText, setIsAddingText] = useState(false);
-  const [textOverlays, setTextOverlays] = useState<TextOverlay[]>([]);
-  const [imageOverlays, setImageOverlays] = useState<ImageOverlay[]>([]);
-  const [pollOverlay, setPollOverlay] = useState<PollOverlay | null>(null);
-  const [isAddingPoll, setIsAddingPoll] = useState(false);
-  const [pollQuestion, setPollQuestion] = useState('');
-  const [pollOptions, setPollOptions] = useState<string[]>(['', '']);
-  const [selectedSong, setSelectedSong] = useState<{title: string, artist: string} | null>(null);
-  const [showSongPicker, setShowSongPicker] = useState(false);
-
-  const colors = ['#9333ea', '#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#000000'];
-  const mockSongs = [
-    { title: 'Lofi Vibes', artist: 'Chill Beat' },
-    { title: 'Summer Pop', artist: 'Hits 2026' },
-    { title: 'Late Night Dance', artist: 'Club Mix' },
-    { title: 'Acoustic Sunset', artist: 'Indie Folk' },
-    { title: 'Upbeat Energy', artist: 'Workout Crew' }
-  ];
-
-  const handleUploadClick = () => {
-    const el = document.getElementById('story-media');
-    if (el) el.click();
-  };
-
-  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    try {
-      const b64 = await resizeImage(file, 1080, 1920);
-      setImageUrl(b64);
-    } catch (err) {
-      console.error(err);
-      showToast('Error loading image');
-    }
-  };
-
-  const handleStickerChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    try {
-      const b64 = await resizeImage(file, 800, 800);
-      setImageOverlays([...imageOverlays, { url: b64, x: 0, y: 0, scale: 1 }]);
-    } catch (err) {
-      console.error(err);
-      showToast('Error loading sticker');
-    }
-  };
-
-  const addTextOverlay = () => {
-    if (text.trim()) {
-      setTextOverlays([...textOverlays, { text, x: 0, y: 0, scale: 1, color: '#ffffff' }]);
-    }
-    setText('');
-    setIsAddingText(false);
-  };
-
-  const addPollOverlay = () => {
-    const validOptions = pollOptions.filter(o => o.trim() !== '');
-    if (pollQuestion.trim() && validOptions.length >= 2) {
-      setPollOverlay({ question: pollQuestion, options: validOptions, x: 0, y: 0, scale: 1 });
-    }
-    setPollQuestion('');
-    setPollOptions(['', '']);
-    setIsAddingPoll(false);
-  };
-
-  const handlePost = async () => {
-    if (!currentUser) return;
-    setIsUploading(true);
-    try {
-      const storyId = `s${Date.now()}`;
-      const now = new Date();
-      const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-      
-      const payload: any = {
-        id: storyId,
-        userId: currentUser.id,
-        createdAt: serverTimestamp(),
-        expiresAt: Timestamp.fromDate(expiresAt),
-        textOverlays,
-        imageOverlays
-      };
-      
-      if (pollOverlay) payload.poll = pollOverlay;
-      if (imageUrl) payload.imageUrl = imageUrl;
-      else payload.backgroundColor = backgroundColor;
-      
-      if (selectedSong) payload.song = selectedSong;
-
-      await setDoc(doc(db, 'stories', storyId), payload);
-      showToast('Story added!');
-      onClose();
-    } catch (err: unknown) {
-      console.error(err);
-      showToast('Failed to add story');
-    } finally {
-      setIsUploading(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-[250] bg-white dark:bg-transparent/95 flex items-center justify-center sm:p-4 text-black dark:text-white">
-      <div className="relative w-full h-full sm:h-[85vh] sm:aspect-[9/16] sm:max-h-[90vh] bg-zinc-100 dark:bg-zinc-900 sm:rounded-[2.5rem] overflow-hidden flex flex-col shadow-2xl sm:border-[8px] sm:border-zinc-200 dark:border-zinc-200 dark:border-zinc-800">
-        <div className="flex items-center justify-between p-4 z-20 sticky top-0 bg-gradient-to-b from-black/80 to-transparent">
-        <button onClick={onClose} className="p-2"><ChevronLeft size={28} /></button>
-        <div className="flex gap-4">
-          <label className="cursor-pointer p-2 bg-white/40 dark:bg-black/40 rounded-full flex items-center justify-center">
-            <ImageIcon size={24} />
-            <input id="story-sticker" type="file" accept="image/*" className="hidden" onChange={handleStickerChange} />
-          </label>
-          <button onClick={() => setIsAddingPoll(true)} className="p-2 bg-white/40 dark:bg-black/40 rounded-full disabled:opacity-50" disabled={!!pollOverlay}><BarChart2 size={24} /></button>
-          <button onClick={() => setIsAddingText(true)} className="p-2 bg-white/40 dark:bg-black/40 rounded-full"><Type size={24} /></button>
-          {!imageUrl && (
-            <div className="flex items-center bg-white/40 dark:bg-black/40 rounded-full px-2 gap-1 overflow-hidden transition-all hide-scrollbar w-32 py-1">
-              <Palette size={20} className="shrink-0 ml-1" />
-              {colors.map(c => (
-                <button key={c} onClick={() => setBackgroundColor(c)} className="w-5 h-5 rounded-full shrink-0 border border-white/20" style={{ backgroundColor: c }} />
-              ))}
-            </div>
-          )}
-          <button className="p-2 bg-white/40 dark:bg-black/40 rounded-full" onClick={() => {
-            if (selectedSong) setSelectedSong(null);
-            else setShowSongPicker(true);
-          }}>
-            {selectedSong ? <Check size={24} className="text-green-400" /> : <Music size={24} />}
-          </button>
-        </div>
-      </div>
-
-      <div className="flex-1 relative flex items-center justify-center overflow-hidden" style={{ backgroundColor: !imageUrl ? backgroundColor : '#000' }}>
-        {imageUrl && <img src={imageUrl || undefined} className="w-full h-full object-cover pointer-events-none" />}
-        
-        {/* Overlays */}
-        <div className="absolute inset-0 pointer-events-none">
-          {(imageOverlays.length > 0 || textOverlays.length > 0) && (
-             <div className="absolute top-20 left-0 w-full flex justify-center z-10 pointer-events-none">
-               <span className="bg-white dark:bg-transparent/50 text-black dark:text-white/70 text-[10px] px-3 py-1.5 rounded-full font-bold uppercase tracking-wider backdrop-blur-sm">Drag to move • Scroll to resize</span>
-             </div>
-          )}
-          {imageOverlays.map((io, i) => (
-             <motion.img 
-               key={`img-${i}`}
-               src={io.url || undefined}
-               drag
-               dragMomentum={false}
-               onDragEnd={(_, info) => {
-                  const newOverlays = [...imageOverlays];
-                  newOverlays[i] = { ...newOverlays[i], x: newOverlays[i].x + info.offset.x, y: newOverlays[i].y + info.offset.y };
-                  setImageOverlays(newOverlays);
-               }}
-               onWheel={(e) => {
-                  const newOverlays = [...imageOverlays];
-                  newOverlays[i].scale += e.deltaY * -0.001;
-                  newOverlays[i].scale = Math.min(Math.max(0.3, newOverlays[i].scale), 4);
-                  setImageOverlays(newOverlays);
-               }}
-               className="absolute w-40 object-cover rounded-xl cursor-move pointer-events-auto border-2 border-white/50 shadow-lg"
-               style={{ x: io.x, y: io.y, scale: io.scale, left: '50%', top: '50%', marginLeft: '-80px', marginTop: '-80px' }}
-             />
-          ))}
-          {textOverlays.map((to, i) => (
-             <motion.div 
-               key={i} 
-               drag
-               dragMomentum={false}
-               onDragEnd={(_, info) => {
-                  const newOverlays = [...textOverlays];
-                  newOverlays[i] = { ...newOverlays[i], x: newOverlays[i].x + info.offset.x, y: newOverlays[i].y + info.offset.y };
-                  setTextOverlays(newOverlays);
-               }}
-               onWheel={(e) => {
-                  const newOverlays = [...textOverlays];
-                  newOverlays[i].scale += e.deltaY * -0.001;
-                  newOverlays[i].scale = Math.min(Math.max(0.5, newOverlays[i].scale), 4);
-                  setTextOverlays(newOverlays);
-               }}
-               className="absolute text-3xl font-bold bg-white dark:bg-transparent/50 px-4 py-2 rounded-xl text-black dark:text-white drop-shadow-md cursor-move pointer-events-auto whitespace-pre-wrap"
-               style={{ x: to.x, y: to.y, scale: to.scale, left: '50%', top: '50%', marginLeft: '-50%', marginTop: '-20px', minWidth: 'max-content' }} // approximate center
-             >
-               {to.text}
-             </motion.div>
-          ))}
-          {pollOverlay && (
-             <motion.div 
-               drag
-               dragMomentum={false}
-               onDragEnd={(_, info) => {
-                  setPollOverlay({ ...pollOverlay, x: pollOverlay.x + info.offset.x, y: pollOverlay.y + info.offset.y });
-               }}
-               className="absolute bg-white text-black p-4 rounded-xl shadow-lg cursor-move pointer-events-auto min-w-[200px]"
-               style={{ x: pollOverlay.x, y: pollOverlay.y, scale: pollOverlay.scale, left: '50%', top: '50%', marginLeft: '-100px', marginTop: '-50px' }}
-             >
-               <div className="font-bold text-center mb-3 text-lg">{pollOverlay.question}</div>
-               <div className="flex flex-col gap-2 pointer-events-none">
-                 {pollOverlay.options.map((opt, i) => (
-                   <div key={i} className="bg-zinc-100 py-2 px-3 rounded-lg text-center font-medium border border-zinc-200">
-                     {opt}
-                   </div>
-                 ))}
-               </div>
-             </motion.div>
-          )}
-        </div>
-        
-        {/* Active Text Edit */}
-        {isAddingText && (
-          <div className="absolute inset-0 bg-white dark:bg-transparent/80 flex flex-col items-center justify-center z-30 px-4">
-            <textarea 
-              value={text} 
-              onChange={e => setText(e.target.value)}
-              className="bg-transparent text-black dark:text-white text-3xl font-bold text-center w-full outline-none placeholder:text-black dark:text-white/50 resize-none"
-              placeholder="Type something..."
-              autoFocus
-            />
-            <button onClick={addTextOverlay} className="absolute top-4 right-4 bg-white text-black px-4 py-2 rounded-full font-bold">Done</button>
-          </div>
-        )}
-
-        {/* Active Poll Edit */}
-        {isAddingPoll && (
-          <div className="absolute inset-0 bg-white dark:bg-transparent/90 flex flex-col items-center justify-center z-30 px-4">
-            <div className="w-full max-w-sm bg-zinc-100 dark:bg-zinc-900 p-6 rounded-2xl flex flex-col gap-4">
-              <input 
-                type="text" 
-                value={pollQuestion}
-                onChange={e => setPollQuestion(e.target.value)}
-                placeholder="Ask a question..."
-                className="bg-transparent text-black dark:text-white text-xl font-bold text-center w-full outline-none placeholder:text-black dark:text-white/50 border-b border-white/20 pb-2"
-                autoFocus
-              />
-              {pollOptions.map((opt, i) => (
-                <div key={i} className="relative">
-                  <input
-                    type="text"
-                    value={opt}
-                    onChange={e => {
-                      const newOpts = [...pollOptions];
-                      newOpts[i] = e.target.value;
-                      setPollOptions(newOpts);
-                    }}
-                    placeholder={`Option ${i + 1}`}
-                    className="w-full bg-zinc-200 dark:bg-zinc-800 text-black dark:text-white px-4 py-3 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium"
-                  />
-                </div>
-              ))}
-              {pollOptions.length < 4 && (
-                <button 
-                  onClick={() => setPollOptions([...pollOptions, ''])}
-                  className="text-indigo-400 font-bold py-2 hover:bg-zinc-200 dark:bg-zinc-800 rounded-xl transition-colors"
-                >
-                  + Add Option
-                </button>
-              )}
-            </div>
-            <button onClick={addPollOverlay} className="absolute top-4 right-4 bg-white text-black px-4 py-2 rounded-full font-bold">Done</button>
-            <button onClick={() => setIsAddingPoll(false)} className="absolute top-4 left-4 text-black dark:text-white px-4 py-2 rounded-full font-bold">Cancel</button>
-          </div>
-        )}
-
-        {/* Song Picker Bottom Sheet */}
-        <AnimatePresence>
-          {showSongPicker && (
-            <motion.div 
-              initial={{ y: '100%' }}
-              animate={{ y: 0 }}
-              exit={{ y: '100%' }}
-              className="absolute inset-x-0 bottom-0 top-1/2 bg-zinc-100 dark:bg-zinc-900 rounded-t-2xl z-40 flex flex-col pointer-events-auto"
-            >
-              <div className="p-4 font-bold border-b border-zinc-200 dark:border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
-                <span>Select Music</span>
-                <button onClick={() => setShowSongPicker(false)} className="p-1"><ChevronLeft size={20} className="rotate-270" /></button>
-              </div>
-              <div className="flex-1 overflow-y-auto p-2">
-                {mockSongs.map(song => (
-                  <button 
-                    key={song.title} 
-                    className="w-full flex items-center gap-3 p-3 hover:bg-zinc-200 dark:bg-zinc-800 rounded-xl text-left transition-colors"
-                    onClick={() => { setSelectedSong(song); setShowSongPicker(false); }}
-                  >
-                    <div className="w-12 h-12 bg-zinc-200 dark:bg-zinc-800 rounded-lg flex items-center justify-center shrink-0 border border-zinc-700">
-                      <Music size={20} className="text-zinc-500 dark:text-zinc-500 dark:text-zinc-400" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="font-bold text-black dark:text-white truncate">{song.title}</div>
-                      <div className="text-sm text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 truncate">{song.artist}</div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-
-      <div className="p-4 flex items-center justify-between z-20 bg-gradient-to-t from-black/80 to-transparent">
-        <label className="cursor-pointer p-3 bg-zinc-200 dark:bg-zinc-800 rounded-full">
-          <ImageIcon size={24} />
-          <input id="story-media" type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
-        </label>
-        
-        {selectedSong && (
-          <div className="flex items-center gap-2 bg-white/20 px-3 py-1.5 rounded-full">
-            <Music size={16} />
-            <span className="text-xs font-bold truncate max-w-[100px]">{selectedSong.title}</span>
-          </div>
-        )}
-
-        <button 
-          onClick={handlePost} 
-          disabled={isUploading}
-          className="bg-white text-black px-6 py-2.5 rounded-full font-bold shadow-lg disabled:opacity-50 flex items-center"
-        >
-          {isUploading ? 'Posting...' : 'Your Story'}
-        </button>
-      </div>
-      </div>
-    </div>
-  );
-};
-
-const StoryViewerModal = ({ stories, user, currentUser, onClose }: { stories: Story[], user: User, currentUser: User | null, onClose: () => void }) => {
-  const [index, setIndex] = useState(0);
-  const { showToast } = useApp();
-  const [comment, setComment] = useState('');
-  const [isLiking, setIsLiking] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [hasLiked, setHasLiked] = useState(false);
-  const [comments, setComments] = useState<any[]>([]);
-  const [pollVotes, setPollVotes] = useState<any[]>([]);
-  const [isVoting, setIsVoting] = useState(false);
-
-  const story = stories[index];
-
-  useEffect(() => {
-    if (!story) return;
-    
-    let unsubLike = () => {};
-    if (currentUser) {
-      unsubLike = onSnapshot(doc(db, `stories/${story.id}/likes`, currentUser.id), snap => {
-         setHasLiked(snap.exists());
-      });
-    }
-    
-    const qComments = query(collection(db, `stories/${story.id}/comments`), orderBy('createdAt', 'desc'));
-    const unsubComments = onSnapshot(qComments, snap => {
-      setComments(snap.docs.map(d => ({id: d.id, ...d.data()})));
-    });
-
-    const unsubVotes = onSnapshot(collection(db, `stories/${story.id}/pollVotes`), snap => {
-      setPollVotes(snap.docs.map(d => ({id: d.id, ...d.data()})));
-    });
-
-    return () => {
-      unsubLike();
-      unsubComments();
-      unsubVotes();
-    };
-  }, [story?.id, currentUser?.id]);
-
-  useEffect(() => {
-    // don't auto advance if typing comment
-    if (document.activeElement?.tagName === 'INPUT') return;
-    const timer = setTimeout(() => {
-      if (index < stories.length - 1) setIndex(index + 1);
-      else onClose();
-    }, 5000);
-    return () => clearTimeout(timer);
-  }, [index, stories.length, onClose]);
-
-  if (!story) return null;
-
-  return (
-    <div className="fixed inset-0 z-[200] bg-white dark:bg-transparent/95 flex flex-col items-center justify-center animate-in fade-in duration-200">
-      <div className="w-full h-full max-w-md relative flex flex-col bg-zinc-100 dark:bg-zinc-900 overflow-hidden shadow-2xl sm:rounded-3xl sm:h-[85vh] sm:border border-zinc-200 dark:border-zinc-200 dark:border-zinc-800">
-        <div className="flex gap-1 p-3 absolute top-0 w-full z-20 bg-gradient-to-b from-black/50 to-transparent">
-          {stories.map((s, i) => (
-            <div key={s.id} className="h-1 flex-1 bg-white/30 rounded-full overflow-hidden">
-              {i === index && <motion.div initial={{ width: 0 }} animate={{ width: '100%' }} transition={{ duration: 5000, ease: 'linear' }} className="h-full bg-white" />}
-              {i < index && <div className="h-full w-full bg-white" />}
-            </div>
-          ))}
-        </div>
-        <div className="absolute top-6 left-0 w-full flex items-center justify-between px-4 z-20 text-black dark:text-white mt-1">
-          <div className="flex items-center gap-2 drop-shadow-md">
-            <img src={user.avatar || undefined} className="w-8 h-8 rounded-full border border-white/50" />
-            <span className="font-bold text-[13px]">{user.username}</span>
-            <span className="text-black dark:text-white/70 text-[11px] font-medium">{formatDistanceToNow(story.createdAt)}</span>
-          </div>
-          <div className="flex items-center gap-1">
-            {currentUser?.id === story.userId && (
-              <button 
-                onClick={async () => {
-                  if (isDeleting) return;
-                  setIsDeleting(true);
-                  try {
-                    await deleteDoc(doc(db, 'stories', story.id));
-                    showToast('Story deleted');
-                    onClose();
-                  } catch (e) {
-                    console.error(e);
-                    showToast('Failed to delete story');
-                    setIsDeleting(false);
-                  }
-                }} 
-                className="p-2 text-black dark:text-white/80 hover:text-red-400 hover:bg-white/20 rounded-full transition-colors drop-shadow-md"
-              >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
-              </button>
-            )}
-            <button onClick={onClose} className="p-2 text-black dark:text-white hover:bg-white/20 rounded-full drop-shadow-md transition-colors">
-               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-            </button>
-          </div>
-        </div>
-
-        <div className="flex-1 relative flex items-center justify-center overflow-hidden" style={{ backgroundColor: story.backgroundColor || '#000' }}>
-          {story.imageUrl && <img src={story.imageUrl || undefined} className="w-full h-full object-cover" />}
-          
-          {story.imageOverlays?.map((io, i) => (
-             <img 
-               key={`io-${i}`} 
-               src={io.url || undefined} 
-               className="absolute w-40 object-cover rounded-xl border border-white shadow-lg pointer-events-none z-10" 
-               style={{ left: `calc(50% + ${io.x}px)`, top: `calc(50% + ${io.y}px)`, transform: `scale(${io.scale || 1})`, marginLeft: '-80px', marginTop: '-80px' }} 
-             />
-          ))}
-
-          {story.textOverlays?.map((to, i) => (
-             <div key={i} className="absolute text-3xl font-bold bg-white dark:bg-transparent/50 px-4 py-2 rounded-xl text-black dark:text-white drop-shadow-md z-10 pointer-events-none whitespace-pre-wrap min-w-max" style={{ left: `calc(50% + ${to.x}px)`, top: `calc(50% + ${to.y}px)`, transform: `translate(-50%, -50%) scale(${to.scale || 1})` }}>
-               {to.text}
-             </div>
-          ))}
-
-          {story.song && (
-            <div className="absolute top-20 left-1/2 -translate-x-1/2 bg-white dark:bg-transparent/60 backdrop-blur-md px-3 py-1.5 rounded-full flex items-center gap-2 z-10 animate-fade-in pointer-events-none shadow-lg border border-white/10">
-              <Music size={14} className="text-black dark:text-white animate-pulse" />
-              <div className="flex flex-col text-black dark:text-white">
-                 <span className="text-[11px] font-bold leading-tight">{story.song.title}</span>
-                 <span className="text-[9px] text-black dark:text-white/70 leading-tight">{story.song.artist}</span>
-              </div>
-            </div>
-          )}
-
-          {story.poll && (() => {
-             const vId = currentUser?.id;
-             const myVote = pollVotes.find(v => v.userId === vId);
-             const hasVoted = !!myVote || story.userId === vId; // owner also sees results
-             const totalVotes = pollVotes.length;
-             return (
-               <div className="absolute bg-white/95 text-black p-4 rounded-xl shadow-2xl z-30 min-w-[220px]" style={{ left: `calc(50% + ${story.poll.x}px)`, top: `calc(50% + ${story.poll.y}px)`, transform: `translate(-50%, -50%) scale(${story.poll.scale || 1})` }}>
-                 <div className="font-bold text-center mb-3 text-lg leading-tight">{story.poll.question}</div>
-                 <div className="flex flex-col gap-2">
-                   {story.poll.options.map((opt, i) => {
-                     const votes = pollVotes.filter(v => v.optionIndex === i).length;
-                     const percent = totalVotes > 0 ? Math.round((votes / totalVotes) * 100) : 0;
-                     return (
-                       <button
-                         key={i}
-                         disabled={isVoting || myVote !== undefined || story.userId === vId}
-                         onClick={async (e) => {
-                           e.stopPropagation();
-                           if (!currentUser) {
-                             showToast('Please log in to vote.');
-                             return;
-                           }
-                           if (isVoting || myVote) return;
-                           setIsVoting(true);
-                           try {
-                             await setDoc(doc(db, `stories/${story.id}/pollVotes`, currentUser.id), {
-                               id: currentUser.id,
-                               userId: currentUser.id,
-                               optionIndex: i,
-                               createdAt: serverTimestamp()
-                             });
-                           } catch (err) {
-                             console.error(err);
-                             showToast('Failed to vote');
-                           } finally {
-                             setIsVoting(false);
-                           }
-                         }}
-                         className="relative bg-zinc-100 py-2.5 px-3 rounded-lg text-center font-medium border border-zinc-200 overflow-hidden w-full transition-transform active:scale-95 disabled:scale-100 disabled:cursor-default"
-                       >
-                         {hasVoted && (
-                           <motion.div initial={{width: 0}} animate={{width: `${percent}%`}} className="absolute left-0 top-0 bottom-0 bg-indigo-100 z-0" />
-                         )}
-                         <span className="relative z-10 flex items-center w-full" style={{ justifyContent: hasVoted ? 'space-between' : 'center' }}>
-                           <span className={cn(myVote?.optionIndex === i ? "font-bold text-indigo-600" : "")}>{opt}</span>
-                           {hasVoted && <span className="text-xs font-bold text-zinc-500 dark:text-zinc-500">{percent}%</span>}
-                         </span>
-                       </button>
-                     );
-                   })}
-                 </div>
-               </div>
-             );
-          })()}
-
-          <div className="absolute inset-0 flex z-20">
-             <div className="flex-1 cursor-pointer" onClick={(e) => { e.stopPropagation(); if (index > 0) setIndex(index - 1); }} />
-             <div className="flex-1 cursor-pointer" onClick={(e) => { e.stopPropagation(); if (index < stories.length - 1) setIndex(index + 1); else onClose(); }} />
-          </div>
-          
-          {/* Comments Display */}
-          <div className="absolute bottom-[80px] left-4 max-w-[80%] max-h-[30%] overflow-y-auto z-30 flex flex-col-reverse gap-2 mask-image-bottom pointer-events-none hide-scrollbar">
-            {comments.map((c) => (
-              <div key={c.id} className="bg-white/40 dark:bg-black/40 backdrop-blur-md rounded-2xl px-3 py-1.5 text-black dark:text-white/90 text-[12px] inline-flex items-center gap-2 max-w-max border border-white/10 animate-fade-in shadow-md">
-                <span className="font-bold text-[10px] text-black dark:text-white/50">{currentUser?.id === c.userId ? currentUser?.username : 'User'}</span>
-                <span className="break-words">{c.text}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-        
-        {/* Story Interactions */}
-        <div className="absolute bottom-0 left-0 w-full p-4 z-30 bg-gradient-to-t from-black/80 to-transparent">
-          <form className="flex items-center gap-3 relative" onSubmit={async (e) => {
-             e.preventDefault();
-             if (!currentUser) {
-               showToast('Please log in to comment.');
-               return;
-             }
-             if (!comment.trim()) return;
-             const cid = `c${Date.now()}`;
-             const text = comment;
-             setComment('');
-             try {
-               await setDoc(doc(db, `stories/${story.id}/comments`, cid), {
-                 id: cid,
-                 userId: currentUser.id,
-                 text,
-                 createdAt: serverTimestamp()
-               });
-               showToast('Comment sent');
-             } catch(err) {
-               console.error(err);
-               showToast('Failed to comment');
-             }
-          }}>
-            <input 
-              type="text" 
-              placeholder="Reply..." 
-              value={comment}
-              onChange={e => setComment(e.target.value)}
-              className="flex-1 bg-white/40 dark:bg-black/40 border border-white/30 text-black dark:text-white rounded-full px-4 py-2.5 text-[13px] placeholder:text-black dark:text-white/60 focus:outline-none focus:border-white/60 focus:bg-white dark:bg-black/60 transition-all backdrop-blur-sm"
-              onFocus={(e) => { e.stopPropagation(); }}
-            />
-            {comment.trim() ? (
-              <button disabled={!comment.trim()} className="absolute right-14 text-black dark:text-white/80 p-1 opacity-80 hover:opacity-100 transition-opacity">
-                Send
-              </button>
-            ) : null}
-            <button 
-              type="button"
-              disabled={isLiking}
-              onClick={async (e) => {
-                e.stopPropagation();
-                if (!currentUser) {
-                  showToast('Please log in to like.');
-                  return;
-                }
-                if (isLiking) return;
-                setIsLiking(true);
-                try {
-                  const likeId = currentUser.id;
-                  const likeRef = doc(db, `stories/${story.id}/likes`, likeId);
-                  if (hasLiked) {
-                    await deleteDoc(likeRef);
-                  } else {
-                    await setDoc(likeRef, {
-                      id: likeId,
-                      userId: currentUser.id,
-                      createdAt: serverTimestamp()
-                    });
-                  }
-                } catch(err) {
-                  console.error(err);
-                  showToast('Failed to like/unlike');
-                } finally {
-                  setIsLiking(false);
-                }
-              }}
-              className="text-black dark:text-white hover:text-red-500 hover:scale-110 p-2 rounded-full transition-all drop-shadow-md bg-white dark:bg-transparent/20 backdrop-blur-sm z-30"
-            >
-              <Heart size={26} fill={hasLiked ? "currentColor" : "none"} className={hasLiked ? "text-red-500" : ""} />
-            </button>
-          </form>
-        </div>
-      </div>
-      
-      {/* Desktop Close Button outside container */}
-      <button onClick={onClose} className="hidden sm:flex absolute top-6 right-6 p-3 text-black dark:text-white hover:bg-white/20 rounded-full transition-colors z-[210]">
-         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-      </button>
-    </div>
-  );
-};
-
-const StoriesBar = () => {
-  const { showToast, currentUser } = useApp();
-  const [storiesByUserId, setStoriesByUserId] = useState<Record<string, Story[]>>({});
-  const [storyUsers, setStoryUsers] = useState<Record<string, User>>({});
-  const [viewingUserId, setViewingUserId] = useState<string | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
-  const [isCreatorOpen, setIsCreatorOpen] = useState(false);
-
-  useEffect(() => {
-    // Only get stories from last 24h to avoid client over-fetching, rules enforce validation.
-    // Firestore where('expiresAt', '>', date) requires composite index if joining with other orderBys, 
-    // so we just query all and filter locally, or orderBy expiresAt.
-    const q = query(
-      collection(db, 'stories'), 
-      where('expiresAt', '>', new Date()),
-      orderBy('expiresAt', 'asc') // Needs index: stories, expiresAt ASC
-    );
-    let backupUnsub: (() => void) | null = null;
-    const unsub = onSnapshot(q, snap => {
-       const mapped: Record<string, Story[]> = {};
-       const usersToFetch = new Set<string>();
-       snap.forEach(d => {
-         const data = d.data();
-         const story = {
-            ...data,
-            id: d.id,
-            createdAt: data.createdAt?.toDate?.() || new Date(),
-            expiresAt: data.expiresAt?.toDate?.() || new Date(),
-         } as Story;
-         if (!mapped[story.userId]) mapped[story.userId] = [];
-         mapped[story.userId].push(story);
-         usersToFetch.add(story.userId);
-       });
-       // Sort stories by createdAt just in case
-       for (const k in mapped) mapped[k].sort((a,b) => a.createdAt.getTime() - b.createdAt.getTime());
-       setStoriesByUserId(mapped);
-
-       // Fetch missing users
-       usersToFetch.forEach(uid => {
-         if (!storyUsers[uid]) {
-           getDoc(doc(db, 'users', uid)).then(uSnap => {
-             if (uSnap.exists()) {
-               setStoryUsers(prev => ({...prev, [uid]: uSnap.data() as User}));
-             }
-           });
-         }
-       });
-    }, e => {
-      if (e.message.includes('index')) {
-        console.warn("Index needed for stories:", e.message);
-        // Fallback if index fails: just get all stories created in last 24h
-        // Not ideal but works for preview if index creation takes time.
-        const backupQ = query(collection(db, 'stories'));
-        backupUnsub = onSnapshot(backupQ, backupSnap => {
-           const mapped: Record<string, Story[]> = {};
-           const now = new Date();
-           backupSnap.forEach(d => {
-             const data = d.data();
-             const exp = data.expiresAt?.toDate?.() || new Date();
-             if (exp > now) {
-                const story = { ...data, id: d.id, createdAt: data.createdAt?.toDate?.() || new Date(), expiresAt: exp } as Story;
-                if (!mapped[story.userId]) mapped[story.userId] = [];
-                mapped[story.userId].push(story);
-             }
-           });
-           setStoriesByUserId(mapped);
-        }, backupErr => console.error(backupErr));
-      }
-    });
-    return () => {
-      unsub();
-      if (backupUnsub) backupUnsub();
-    };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !currentUser) return;
-    setIsUploading(true);
-    try {
-      const resizedBase64 = await resizeImage(file, 1080, 1920);
-      const storyId = `s${Date.now()}`;
-      const now = new Date();
-      const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-      await setDoc(doc(db, 'stories', storyId), {
-        id: storyId,
-        userId: currentUser.id,
-        imageUrl: resizedBase64,
-        createdAt: serverTimestamp(),
-        expiresAt: Timestamp.fromDate(expiresAt),
-      });
-      showToast('Story added!');
-    } catch (err: unknown) {
-      console.error(err);
-      showToast('Failed to add story');
-    }
-    setIsUploading(false);
-  };
-
-  const userIdsWithStories = Object.keys(storiesByUserId).filter(id => id !== currentUser?.id);
-  const myStories = currentUser ? storiesByUserId[currentUser.id] : undefined;
-
-  return (
-    <>
-      <div className="w-full border-b border-zinc-200 dark:border-zinc-800/50 pb-3 pt-4 mb-2">
-        <div className="flex px-4 items-start gap-4 overflow-x-auto hide-scrollbar">
-          <div className="flex flex-col items-center gap-1.5 shrink-0 transition-opacity relative">
-            <div className="relative cursor-pointer" onClick={() => {
-               if (!currentUser) {
-                 showToast('Please log in to add a story.');
-                 return;
-               }
-               if (myStories && myStories.length > 0) {
-                  setViewingUserId(currentUser.id);
-               } else {
-                  setIsCreatorOpen(true);
-               }
-            }}>
-              <div className={cn("w-[68px] h-[68px] rounded-full flex items-center justify-center p-[2px] shadow-sm", myStories && myStories.length > 0 ? "bg-gradient-to-tr from-zinc-300 to-zinc-400" : "")}>
-                {currentUser ? <img src={currentUser?.avatar || undefined} alt="Your story" className="w-[60px] h-[60px] rounded-full bg-zinc-200 dark:bg-zinc-800 border-2 border-white dark:border-black object-cover" /> : <div className="w-[60px] h-[60px] rounded-full bg-zinc-200 dark:bg-zinc-800 border-2 border-white dark:border-black flex items-center justify-center text-zinc-500"><UserIcon size={30} /></div>}
-              </div>
-            </div>
-            <div className="absolute bottom-5 right-0 bg-indigo-500 rounded-full w-5 h-5 flex items-center justify-center shadow-sm cursor-pointer z-10 hover:scale-110 transition-transform" onClick={() => {
-               if (!currentUser) {
-                 showToast('Please log in to add a story.');
-                 return;
-               }
-               setIsCreatorOpen(true);
-            }}>
-              <PlusSquare size={12} className="text-black dark:text-white" />
-            </div>
-            <span className="text-[11px] text-zinc-500 dark:text-zinc-500 dark:text-zinc-400">Your story</span>
-          </div>
-          
-          {userIdsWithStories.map(uid => {
-             const u = storyUsers[uid];
-             if (!u) return null;
-             return (
-               <div key={uid} className="flex flex-col items-center gap-1.5 shrink-0 cursor-pointer group" onClick={() => setViewingUserId(uid)}>
-                  <div className="w-[68px] h-[68px] rounded-full bg-gradient-to-tr from-yellow-500 via-rose-500 to-indigo-500 flex items-center justify-center p-[2px] group-hover:scale-105 transition-transform duration-300 shadow-sm">
-                    <img src={u.avatar || undefined} alt={u.username} className="w-[60px] h-[60px] rounded-full bg-zinc-200 dark:bg-zinc-800 border-2 border-white dark:border-black object-cover" />
-                  </div>
-                  <span className="text-[11px] text-zinc-700 dark:text-zinc-300 max-w-[70px] truncate">{u.username}</span>
-               </div>
-             );
-          })}
-        </div>
-      </div>
-      {viewingUserId && <StoryViewerModal stories={storiesByUserId[viewingUserId]} user={viewingUserId === currentUser?.id ? currentUser : storyUsers[viewingUserId]} currentUser={currentUser} onClose={() => setViewingUserId(null)} />}
-      {isCreatorOpen && <StoryCreatorModal onClose={() => setIsCreatorOpen(false)} />}
-    </>
-  );
-};
-
-import { ContestsScreen } from './ContestsScreen';
-import { ContestDetailScreen } from './ContestDetailScreen';
-
-
-const SuggestedUsers = () => {
-  const { currentUser, followingIds } = useApp();
-  const [users, setUsers] = useState<User[]>([]);
-  const navigate = useNavigate();
-
-  useEffect(() => {
-    const fetchSuggested = async () => {
-      try {
-        const q = query(collection(db, 'users'), limit(50));
-        const snap = await getDocs(q);
-        const fetched = [];
-        snap.forEach(d => {
-          const u = d.data() as User;
-          if (!currentUser || (u.id !== currentUser.id && !followingIds.includes(u.id) && !u.deactivated)) {
-            fetched.push(u);
-          }
-        });
-        // Shuffle and take top 10
-        setUsers(fetched.sort(() => 0.5 - Math.random()).slice(0, 10));
-      } catch (e) {
-        console.error("Error fetching suggested users: ", e);
-      }
-    };
-    fetchSuggested();
-  }, [currentUser, followingIds]);
-
-  if (users.length === 0) return null;
-
-  return (
-    <div className="py-4 border-b border-zinc-200 dark:border-zinc-800">
-      <div className="px-5 mb-3 flex items-center justify-between">
-        <h3 className="font-semibold text-[14px] text-zinc-900 dark:text-zinc-100">Suggested for you</h3>
-      </div>
-      <div className="flex overflow-x-auto gap-3 px-5 pb-2 scrollbar-none snap-x flex-nowrap" style={{ msOverflowStyle: 'none', scrollbarWidth: 'none' }}>
-        {users.map(u => (
-          <div key={u.id} className="snap-start shrink-0 flex flex-col items-center p-4 w-[140px] rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 shadow-sm cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" onClick={() => navigate(`/${u.username}`)}>
-            <img src={u.avatar || undefined} alt={u.username} className="w-14 h-14 rounded-full object-cover mb-2 border border-zinc-200 dark:border-zinc-700" />
-            <span className="font-semibold text-[13px] text-zinc-900 dark:text-zinc-100 w-full text-center truncate">{u.name || u.username}</span>
-            <span className="text-[12px] text-zinc-500 dark:text-zinc-400 w-full text-center truncate mb-3">@{u.username}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-};
-
-const FeedScreen = () => {
-  const { posts, followingIds, currentUser, showToast, theme, setTheme, notifications, chats } = useApp();
-  const [feedType, setFeedType] = useState<'latest' | 'following'>('latest');
-  const [sessionSeed] = useState(() => Math.random() * 1000);
-  
-  const unseenNotificationCount = notifications.filter(n => !n.read).length;
-  const unseenMessageCount = chats.filter(c => currentUser && (!c.seenBy || !c.seenBy.includes(currentUser.id)) && c.lastMessage).length;
-  
-  const displayPosts = React.useMemo(() => {
-    if (feedType === 'following') {
-      return posts
-        .filter(p => followingIds.includes(p.userId) || p.userId === currentUser?.id)
-        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-    } else {
-      // Latest feed
-      const latest = [...posts].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()).slice(0, 50);
-      
-      const getHash = (str: string) => {
-        let h = 0;
-        for (let i = 0; i < str.length; i++) h = Math.imul(31, h) + str.charCodeAt(i) | 0;
-        return Math.abs(h);
-      };
-
-      return latest
-        .map(post => {
-          const hash = getHash(post.id);
-          const pseudoRandom = Math.sin(hash + sessionSeed) * 10000;
-          const score = pseudoRandom - Math.floor(pseudoRandom);
-          return { post, score };
-        })
-        .sort((a, b) => b.score - a.score)
-        .map(p => p.post);
-    }
-  }, [posts, followingIds, currentUser, feedType, sessionSeed]);
-
-  return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex-1 flex flex-col min-h-0 bg-white dark:bg-black">
-      <header className="px-5 pt-4 pb-2 flex flex-col border-b border-zinc-200 dark:border-zinc-800 sticky top-0 bg-white/90 dark:bg-black/90 backdrop-blur-md z-40 shrink-0">
-        <div className="flex justify-between items-center mb-3">
-          <span className="font-bold text-xl italic text-zinc-900 dark:text-zinc-100">FineFeed</span>
-          <div className="flex gap-4 items-center mt-1 lg:hidden">
-            <button 
-              onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')} 
-              className="text-zinc-700 dark:text-zinc-300 hover:text-black dark:hover:text-white transition-colors"
-            >
-              {theme === 'light' ? <Moon size={22} /> : <Sun size={22} />}
-            </button>
-            <Link to="/notifications" className="relative">
-              <Heart size={24} className="text-zinc-700 dark:text-zinc-300 hover:text-black dark:hover:text-white transition-colors" />
-              {unseenNotificationCount > 0 && (
-                <div className="absolute -top-1.5 -right-2 h-[18px] min-w-[18px] px-1 bg-red-500 rounded-full border border-white dark:border-black flex items-center justify-center text-[10px] font-bold text-black dark:text-white pointer-events-none shadow-sm">
-                  {unseenNotificationCount > 99 ? '99+' : unseenNotificationCount}
-                </div>
-              )}
-            </Link>
-            <Link to="/chat" className="relative">
-              <MessageCircle size={24} className="text-zinc-700 dark:text-zinc-300 hover:text-black dark:hover:text-white transition-colors" />
-              {unseenMessageCount > 0 && (
-                <div className="absolute -top-1.5 -right-2 h-[18px] min-w-[18px] px-1 bg-red-500 rounded-full border border-white dark:border-black flex items-center justify-center text-[10px] font-bold text-black dark:text-white pointer-events-none shadow-sm">
-                   {unseenMessageCount > 99 ? '99+' : unseenMessageCount}
-                </div>
-              )}
-            </Link>
-          </div>
-        </div>
-        <div className="flex gap-4 px-1">
-          <button 
-            onClick={() => setFeedType('latest')} 
-            className={cn("pb-2 px-2 text-[14px] font-bold transition-colors border-b-2", feedType === 'latest' ? "border-black dark:border-white text-black dark:text-white" : "border-transparent text-zinc-500 dark:text-zinc-500")}
-          >
-            Latest
-          </button>
-          {currentUser && (
-            <button 
-              onClick={() => setFeedType('following')} 
-              className={cn("pb-2 px-2 text-[14px] font-bold transition-colors border-b-2", feedType === 'following' ? "border-black dark:border-white text-black dark:text-white" : "border-transparent text-zinc-500 dark:text-zinc-500")}
-            >
-              Following
-            </button>
-          )}
-        </div>
-      </header>
-      <div className="flex-1 overflow-y-auto divide-y divide-zinc-900/50 pb-6">
-        <StoriesBar />
-        <div className="xl:hidden">
-          <SuggestedUsers />
-        </div>
-        <AnimatePresence mode="popLayout">
-          {displayPosts.length === 0 ? (
-            <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col items-center justify-center p-10 h-64 text-center">
-              <p className="text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 font-medium">No posts here yet.</p>
-            </motion.div>
-          ) : (
-            displayPosts.map((post) => (
-              <PostItem key={post.id} post={post} />
-            ))
-          )}
-        </AnimatePresence>
-      </div>
-    </motion.div>
-  );
-};
-
-const NotificationsScreen = () => {
-  const { notifications, currentUser } = useApp();
-  const navigate = useNavigate();
-  const [actors, setActors] = useState<Record<string, User>>({});
-
-  useEffect(() => {
-    const fetchActors = async () => {
-      const newActors = { ...actors };
-      let changed = false;
-      for (const n of notifications) {
-        if (!newActors[n.actorId] && n.actorId !== currentUser?.id) {
-          try {
-            const snap = await getDoc(doc(db, 'users', n.actorId));
-            if (snap.exists()) {
-              newActors[n.actorId] = snap.data() as User;
-              changed = true;
-            }
-          } catch(e) {}
-        }
-      }
-      if (changed) setActors(newActors);
-    };
-    fetchActors();
-
-    // Mark all unread notifications as read
-    const unread = notifications.filter(n => !n.read);
-    if (unread.length > 0) {
-      unread.forEach(n => {
-        updateDoc(doc(db, 'notifications', n.id), { read: true }).catch(console.error);
-      });
-    }
-  }, [notifications, currentUser]);
-
-  const handleRead = (n: Notification) => {
-    if (!n.read) {
-      updateDoc(doc(db, 'notifications', n.id), { read: true });
-    }
-    if (n.postId) {
-      navigate(`/post/${n.postId}/comments`);
-    } else if (n.type === 'follow') {
-      const actor = actors[n.actorId];
-      if (actor) navigate(`/${actor.username}`);
-    }
-  };
-
-  return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex-1 flex flex-col min-h-0 bg-white dark:bg-black">
-      <header className="px-5 py-4 border-b border-zinc-200 dark:border-zinc-800 sticky top-0 bg-white/90 dark:bg-black/90 backdrop-blur-md z-40 shrink-0">
-        <span className="font-bold text-xl text-zinc-900 dark:text-zinc-100">Notifications</span>
-      </header>
-      <div className="flex-1 overflow-y-auto pb-6">
-        {notifications.length === 0 ? (
-          <div className="flex flex-col items-center justify-center p-10 h-full text-center text-zinc-500 dark:text-zinc-500">
-            <Heart size={48} className="mb-4 opacity-50" />
-            <p>No notifications yet.</p>
-          </div>
-        ) : (
-          <div className="divide-y divide-zinc-100 dark:divide-zinc-900">
-            {notifications.map(n => {
-              const isSystem = n.type === 'system';
-              const actor = isSystem 
-                ? { name: 'System', avatar: 'https://cdn-icons-png.flaticon.com/512/3652/3652191.png' } 
-                : actors[n.actorId] || { name: 'Someone', avatar: '' };
-              return (
-                <div 
-                  key={n.id} 
-                  onClick={() => handleRead(n)}
-                  className={cn("flex items-center gap-4 px-5 py-4 cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-900/50 transition-colors", !n.read && "bg-indigo-50/50 dark:bg-indigo-900/10")}
-                >
-                  {isSystem ? (
-                    <div className="w-10 h-10 rounded-full bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-500 shrink-0">
-                      <Trophy size={18} />
-                    </div>
-                  ) : (
-                    <img src={actor.avatar || undefined} alt="" className="w-10 h-10 rounded-full bg-zinc-200 dark:bg-zinc-800 shrink-0" />
-                  )}
-                  <div className="flex-1 text-[14px]">
-                    <span className="font-semibold text-zinc-900 dark:text-zinc-100 mr-1">{actor.name}</span>
-                    <span className="text-zinc-600 dark:text-zinc-500 dark:text-zinc-400">
-                      {n.type === 'like' && 'liked your post.'}
-                      {n.type === 'comment' && 'commented on your post.'}
-                      {n.type === 'follow' && 'started following you.'}
-                      {n.type === 'system' && n.message}
-                    </span>
-                    <div className="text-[12px] text-zinc-500 dark:text-zinc-500 mt-0.5">
-                      {formatDistanceToNow(n.createdAt, { addSuffix: true })}
-                    </div>
-                  </div>
-                  {!n.read && <div className="w-2 h-2 rounded-full bg-indigo-500 shrink-0" />}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    </motion.div>
-  );
-};
-
-const CreateGroupChatScreen = () => {
-  const { currentUser } = useApp();
-  const navigate = useNavigate();
-  const [users, setUsers] = useState<User[]>([]);
-  const [selectedUsers, setSelectedUsers] = useState<User[]>([]);
-  const [queryText, setQueryText] = useState('');
-  const [groupName, setGroupName] = useState('');
-  const [isCreating, setIsCreating] = useState(false);
-
-  useEffect(() => {
-    if (!queryText.trim()) {
-      setUsers([]);
-      return;
-    }
-    const q = query(
-      collection(db, 'users'), 
-      where('username', '>=', queryText.toLowerCase()),
-      where('username', '<', queryText.toLowerCase() + '\uf8ff')
-    );
-    const unsub = onSnapshot(q, snap => {
-      const u: User[] = [];
-      snap.forEach(d => {
-        if (d.id !== currentUser?.id) {
-          u.push(d.data() as User);
-        }
-      });
-      setUsers(u);
-    });
-    return () => unsub();
-  }, [queryText, currentUser]);
-
-  const handleCreate = async () => {
-    if (!currentUser || selectedUsers.length === 0 || !groupName.trim() || isCreating) return;
-    setIsCreating(true);
-    try {
-      const allUsers = [currentUser.id, ...selectedUsers.map(u => u.id)];
-      const chatId = `group_${Date.now()}`;
-      await setDoc(doc(db, 'chats', chatId), {
-        id: chatId,
-        users: allUsers,
-        admins: [currentUser.id],
-        lastMessage: 'Group created',
-        updatedAt: serverTimestamp(),
-        seenBy: [currentUser.id],
-        isGroup: true,
-        groupName: groupName.trim()
-      });
-      navigate(`/chat/${chatId}`);
-    } catch (e) {
-      console.error(e);
-      setIsCreating(false);
-    }
-  };
-
-  const toggleUser = (u: User) => {
-    setSelectedUsers(prev => {
-      const exists = prev.find(user => user.id === u.id);
-      if (exists) return prev.filter(user => user.id !== u.id);
-      return [...prev, u];
-    });
-  };
-
-  return (
-    <motion.div initial={{ x: 50, opacity: 0 }} animate={{ x: 0, opacity: 1 }} className="flex-1 flex flex-col min-h-0 bg-white dark:bg-black absolute inset-0 z-50">
-      <header className="flex items-center justify-between px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black/90 backdrop-blur-md sticky top-0 z-10 shrink-0">
-        <div className="flex items-center gap-2">
-          <button onClick={() => navigate(-1)} className="p-1.5 rounded-full text-zinc-500 dark:text-zinc-500 hover:text-black dark:text-white transition-colors"><ChevronLeft size={24} /></button>
-          <span className="font-bold text-zinc-900 dark:text-zinc-100">New Group</span>
-        </div>
-        <button 
-          onClick={handleCreate}
-          disabled={selectedUsers.length === 0 || !groupName.trim() || isCreating}
-          className="text-indigo-600 font-bold disabled:opacity-50 text-[14px]"
-        >
-          Create
-        </button>
-      </header>
-      
-      <div className="flex-1 overflow-y-auto w-full">
-        <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 space-y-4">
-          <input 
-            type="text" 
-            placeholder="Group Name" 
-            value={groupName}
-            onChange={e => setGroupName(e.target.value)}
-            className="w-full bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 outline-none text-black dark:text-white"
-          />
-          <div className="w-full relative">
-            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-900 dark:text-zinc-100 font-medium">To:</span>
-            <input 
-              type="text" 
-              placeholder="Search..." 
-              value={queryText}
-              onChange={e => setQueryText(e.target.value)}
-              className="w-full bg-transparent border-none outline-none text-black dark:text-white py-3 pl-12 pr-4 min-w-0"
-            />
-          </div>
-        </div>
-
-        {selectedUsers.length > 0 && (
-          <div className="p-4 border-b border-zinc-200 dark:border-zinc-800">
-             <div className="flex gap-4 overflow-x-auto no-scrollbar scroll-smooth">
-              {selectedUsers.map(u => (
-                <div key={`sel_${u.id}`} className="flex flex-col items-center gap-1 shrink-0 relative group">
-                  <div className="w-14 h-14 relative">
-                    <img src={u.avatar || undefined} className="w-14 h-14 rounded-full object-cover bg-zinc-200 dark:bg-zinc-800" />
-                    <button 
-                      onClick={() => toggleUser(u)} 
-                      className="absolute -top-1 -right-1 w-5 h-5 bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 rounded-full flex items-center justify-center border-2 border-white dark:border-black"
-                    >
-                      <X size={12} strokeWidth={3} />
-                    </button>
-                  </div>
-                  <span className="text-[12px] font-medium text-zinc-900 dark:text-zinc-100 w-16 text-center truncate">{u.name.split(' ')[0]}</span>
-                </div>
-              ))}
-             </div>
-          </div>
-        )}
-
-        {users.length === 0 && queryText.length > 0 && (
-           <p className="text-zinc-500 dark:text-zinc-500 text-center p-6 text-[14px]">No accounts found.</p>
-        )}
-
-        <div className="flex flex-col p-2">
-          {users.map(u => {
-            const isSelected = selectedUsers.some(user => user.id === u.id);
-            return (
-              <div key={u.id} className="flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-colors active:bg-zinc-100 dark:active:bg-zinc-800 dark:bg-zinc-900" onClick={() => toggleUser(u)}>
-                <img src={u.avatar || undefined} className="w-12 h-12 rounded-full object-cover bg-zinc-200 dark:bg-zinc-800 shrink-0" />
-                <div className="flex-1 min-w-0 flex flex-col justify-center">
-                  <p className="font-bold text-[14px] text-zinc-900 dark:text-zinc-100 flex items-center shrink-0">
-                    <span className="truncate">{u.name}</span>
-                    <VerifiedBadge isVerified={u.isVerified} />
-                  </p>
-                  <p className="text-[14px] text-zinc-500 dark:text-zinc-500 truncate">{u.username}</p>
-                </div>
-                <div className={cn("w-6 h-6 rounded-full border flex items-center justify-center shrink-0", isSelected ? "bg-indigo-500 border-indigo-500 text-black dark:text-white" : "border-zinc-300 dark:border-zinc-700")}>
-                  {isSelected && <Check size={16} strokeWidth={3} />}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </motion.div>
-  );
-};
-
-const ChatListScreen = () => {
-  const { chats, currentUser } = useApp();
-  const [chatUsers, setChatUsers] = useState<Record<string, User>>({});
-  const navigate = useNavigate();
-
-  const chatUsersRef = React.useRef<Record<string, boolean>>({});
-
-  useEffect(() => {
-    chats.forEach(async c => {
-      if (c.isGroup) return;
-      const otherUserId = c.users.find(u => u !== currentUser?.id);
-      if (otherUserId && !chatUsersRef.current[otherUserId]) {
-        chatUsersRef.current[otherUserId] = true;
-        const snap = await getDoc(doc(db, 'users', otherUserId));
-        if (snap.exists()) {
-          setChatUsers(prev => ({ ...prev, [otherUserId]: snap.data() as User }));
-        }
-      }
-    });
-  }, [chats, currentUser]);
-
-  return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex-1 flex flex-col min-h-0 bg-white dark:bg-black">
-      <header className="px-5 py-5 border-b border-zinc-200 dark:border-zinc-800 sticky top-0 bg-white dark:bg-black/90 backdrop-blur-md z-40 shrink-0 flex items-center justify-between">
-        <div className="text-xl font-bold text-zinc-900 dark:text-zinc-100 tracking-tight">Messages</div>
-        <div className="flex gap-2 items-center">
-          <button onClick={() => navigate('/search')} className="p-2 text-zinc-900 dark:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition-colors" title="New Chat">
-            <Search size={24} />
-          </button>
-          <button onClick={() => navigate('/chat/group/create')} className="p-2 -mr-2 text-zinc-900 dark:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition-colors" title="New Group">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
-          </button>
-        </div>
-      </header>
-      <div className="flex-1 overflow-y-auto w-full pt-2 pb-6">
-        {chats.map((chat) => {
-          let name = 'Unknown';
-          let avatarUrl = '';
-          const isGroup = chat.isGroup;
-          
-          if (isGroup) {
-            name = chat.groupName || 'Group Chat';
-            avatarUrl = chat.groupAvatar || `https://api.dicebear.com/7.x/initials/svg?seed=${name}`;
-          } else {
-            const otherUserId = chat.users.find(u => u !== currentUser?.id);
-            const user = otherUserId ? chatUsers[otherUserId] : null;
-            if (!user) return null;
-            name = user.name;
-            avatarUrl = user.avatar || '';
-          }
-
-          return (
-            <Link key={chat.id} to={`/chat/${chat.id}`} className="flex items-center gap-4 px-5 py-3 w-full relative">
-              <div className="relative shrink-0">
-                <img src={avatarUrl || undefined} alt="" className="w-14 h-14 rounded-full bg-zinc-200 dark:bg-zinc-800 object-cover" />
-                {!isGroup && <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-emerald-500 border-2 border-white dark:border-black rounded-full" />}
-              </div>
-              <div className="flex-1 min-w-0 flex flex-col justify-center">
-                <div className="flex justify-between items-baseline mb-1">
-                  <p className="font-bold text-[15px] text-zinc-900 dark:text-zinc-100">{name}</p>
-                  <p className="text-[11px] text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 font-medium whitespace-nowrap ml-2">{formatDistanceToNow(chat.updatedAt)}</p>
-                </div>
-                <div className={cn("text-[14px] truncate pr-4", currentUser && chat.seenBy && !chat.seenBy.includes(currentUser.id) && chat.lastMessage ? "text-zinc-900 dark:text-zinc-100 font-bold" : "text-zinc-600 dark:text-zinc-500 dark:text-zinc-400")}>
-                  {chat.lastMessage || 'Start a conversation'}
-                </div>
-              </div>
-              {currentUser && chat.seenBy && !chat.seenBy.includes(currentUser.id) && chat.lastMessage && (
-                <div className="w-2.5 h-2.5 bg-red-500 rounded-full shrink-0" />
-              )}
-            </Link>
-          );
-        })}
-        {chats.length === 0 && (
-          <div className="flex flex-col items-center justify-center p-10 h-full text-center">
-            <div className="w-20 h-20 bg-zinc-100 dark:bg-zinc-900 rounded-full flex items-center justify-center mb-6">
-               <svg className="w-10 h-10 text-zinc-500 dark:text-zinc-500 dark:text-zinc-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-            </div>
-            <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 mb-2">Your Messages</h3>
-            <p className="text-sm text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 mb-6 max-w-[240px]">Connect with friends or groups, direct messages will appear here.</p>
-            <button onClick={() => navigate('/search')} className="bg-indigo-600 hover:bg-indigo-500 text-black dark:text-white font-bold py-2.5 px-6 rounded-full text-[14px] transition-colors">Start a Chat</button>
-          </div>
-        )}
-      </div>
-    </motion.div>
-  );
-};
-
-const HighlightedText = ({ text, highlight }: { text: string, highlight: string }) => {
-  if (!highlight.trim()) return <span>{text}</span>;
-  const regex = new RegExp(`(${highlight})`, 'gi');
-  const parts = text.split(regex);
-  return (
-    <span>
-      {parts.map((part, i) => 
-        regex.test(part) ? (
-          <span key={i} className="bg-yellow-300 dark:bg-yellow-600 text-black dark:text-white rounded-[2px] px-[2px]">{part}</span>
-        ) : (
-          <span key={i}>{part}</span>
-        )
-      )}
-    </span>
-  );
-};
-
-const ChatRoomScreen = () => {
-  const { chats, sendMessage, deleteMessage, currentUser, removeGroupMember, deleteChat, showConfirm, showToast } = useApp();
-  const navigate = useNavigate();
-  const location = useLocation();
-  const chatId = location.pathname.split('/').pop() || '';
-  const chat = chats.find(c => c.id === chatId);
-  
-  const [chatMessages, setChatMessages] = useState<Message[]>([]);
-  const [chatUsers, setChatUsers] = useState<Record<string, User>>({});
-  const [text, setText] = useState('');
-  const messagesEndRef = React.useRef<HTMLDivElement>(null);
-  
-    const [searchQuery, setSearchQuery] = useState('');
-    const [isSearching, setIsSearching] = useState(false);
-    const [showGroupInfo, setShowGroupInfo] = useState(false);
-    const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  
-    useEffect(() => {
-      if (!chat || !currentUser) return;
-    const fetchUsers = async () => {
-      const usersToFetch = chat.users.filter(u => u !== currentUser.id);
-      const newChatUsers: Record<string, User> = {};
-      await Promise.all(usersToFetch.map(async (u) => {
-        const snap = await getDoc(doc(db, 'users', u));
-        if (snap.exists()) newChatUsers[u] = snap.data() as User;
-      }));
-      setChatUsers(newChatUsers);
-    };
-    fetchUsers();
-  }, [chat, currentUser]);
-
-  useEffect(() => {
-    if (!chatId || !chat) return;
-    if (currentUser && (!chat.seenBy || !chat.seenBy.includes(currentUser.id))) {
-      updateDoc(doc(db, 'chats', chatId), {
-        seenBy: Array.from(new Set([...(chat.seenBy || []), currentUser.id]))
-      }).catch(e => {
-        console.error("Firestore Error on updating seenBy: ", e.message, `Path chats/${chatId}`);
-      });
-    }
-    const q = query(collection(db, `chats/${chatId}/messages`), orderBy('createdAt', 'asc'));
-    const unsub = onSnapshot(q, snap => {
-      const msgs: Message[] = [];
-      snap.forEach(d => {
-        const data = d.data();
-        msgs.push({
-          ...data,
-          id: d.id,
-          createdAt: data.createdAt?.toDate?.() || new Date()
-        } as Message);
-      });
-      setChatMessages(msgs);
-      setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
-    }, error => console.error("Messages error:", error.message));
-    return () => unsub();
-  }, [chatId, chat]);
-
-  if (!chat) return <div className="p-5 flex justify-center items-center h-full text-zinc-500 dark:text-zinc-500">Wait...</div>;
-
-  const isGroup = chat.isGroup;
-  let headerName = 'Unknown';
-  let headerSubtitle = '';
-  let headerAvatar = '';
-  let headerLink = '#';
-  let isUserOnline = false;
-
-  if (isGroup) {
-    headerName = chat.groupName || 'Group Chat';
-    headerSubtitle = `${chat.users.length} members`;
-    headerAvatar = chat.groupAvatar || `https://api.dicebear.com/7.x/initials/svg?seed=${headerName}`;
-    headerLink = '#';
-  } else {
-    const otherUserId = chat.users.find(u => u !== currentUser?.id);
-    const user = otherUserId ? chatUsers[otherUserId] : null;
-    if (user) {
-      const nickname = chat.nicknames?.[user.id] || null;
-      headerName = nickname || user.name;
-      isUserOnline = checkIsOnline(user.lastActive);
-      headerSubtitle = isUserOnline ? 'Active now' : `@${user.username}`;
-      headerAvatar = user.avatar || '';
-      headerLink = `/${user.username}`;
-    }
-  }
-
-  const handleSend = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!text.trim()) return;
-    sendMessage(chatId, text);
-    setText('');
-    setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
-  };
-
-  return (
-    <motion.div initial={{ x: 50, opacity: 0 }} animate={{ x: 0, opacity: 1 }} className="flex-1 flex flex-col min-h-0 bg-white dark:bg-black absolute inset-0 z-50">
-      <header className="flex items-center px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black/90 backdrop-blur-md sticky top-0 z-10 shrink-0">
-        <button onClick={() => navigate(-1)} className="mr-3 p-1.5 rounded-full text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 hover:text-black dark:text-white hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors"><ChevronLeft size={24} /></button>
-        {isGroup ? (
-          <button onClick={() => setShowGroupInfo(true)} className="flex items-center gap-3 flex-1 group min-w-0 text-left">
-            <div className="relative shrink-0">
-               <img src={headerAvatar || undefined} alt="" className="w-10 h-10 rounded-full bg-zinc-200 dark:bg-zinc-800 object-cover" />
-            </div>
-            <div className="min-w-0">
-              <p className="font-bold text-[15px] text-zinc-900 dark:text-zinc-100 leading-tight mb-0.5 truncate">{headerName}</p>
-              <p className="text-[12px] font-medium text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 truncate">{headerSubtitle}</p>
-            </div>
-          </button>
-        ) : (
-          <Link to={headerLink} className="flex items-center gap-3 flex-1 group min-w-0">
-            <div className="relative shrink-0">
-               <img src={headerAvatar || undefined} alt="" className="w-10 h-10 rounded-full bg-zinc-200 dark:bg-zinc-800 object-cover" />
-               {isUserOnline && (
-                 <div className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-white dark:border-black rounded-full" />
-               )}
-            </div>
-            <div className="min-w-0">
-              <p className="font-bold text-[15px] text-zinc-900 dark:text-zinc-100 leading-tight mb-0.5 truncate">{headerName}</p>
-              <p className={cn("text-[12px] font-medium truncate", isUserOnline ? "text-emerald-500" : "text-zinc-500 dark:text-zinc-500 dark:text-zinc-400")}>{headerSubtitle}</p>
-            </div>
-          </Link>
-        )}
-        {!isGroup && (
-          <div className="flex items-center gap-1 mr-1">
-            <button 
-              onClick={() => {
-                const otherUserId = chat.users.find(u => u !== currentUser?.id);
-                if (otherUserId && chatUsers[otherUserId]) {
-                  startCall(currentUser, chatUsers[otherUserId], 'audio', chat.id);
-                }
-              }}
-              className="p-2 rounded-full transition-colors text-zinc-500 hover:text-indigo-600 dark:text-zinc-400 dark:hover:text-indigo-400 hover:bg-zinc-100 dark:hover:bg-zinc-900"
-            >
-              <Phone size={20} />
-            </button>
-            <button 
-              onClick={() => {
-                const otherUserId = chat.users.find(u => u !== currentUser?.id);
-                if (otherUserId && chatUsers[otherUserId]) {
-                  startCall(currentUser, chatUsers[otherUserId], 'video', chat.id);
-                }
-              }}
-              className="p-2 rounded-full transition-colors text-zinc-500 hover:text-indigo-600 dark:text-zinc-400 dark:hover:text-indigo-400 hover:bg-zinc-100 dark:hover:bg-zinc-900"
-            >
-              <Video size={20} />
-            </button>
-          </div>
-        )}
-        <button 
-          onClick={() => {
-            setIsSearching(!isSearching);
-            if (isSearching) setSearchQuery('');
-          }} 
-          className={cn("p-2 rounded-full transition-colors", isSearching ? "text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30" : "text-zinc-500 dark:text-zinc-500 hover:text-black dark:text-zinc-500 dark:text-zinc-400 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-900")}
-        >
-          <Search size={20} />
-        </button>
-        <button 
-          onClick={() => setIsSettingsOpen(true)}
-          className="p-2 rounded-full transition-colors text-zinc-500 hover:text-black dark:text-zinc-500 dark:text-zinc-400 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-900 ml-1"
-        >
-          <Settings size={20} />
-        </button>
-      </header>
-
-      {isSearching && (
-        <div className="px-4 py-2 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 sticky top-[65px] z-10 shrink-0">
-          <div className="relative">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 dark:text-zinc-500 dark:text-zinc-400" />
-            <input 
-              type="text" 
-              placeholder="Search in conversation..." 
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-lg pl-9 pr-8 py-1.5 text-[14px] outline-none text-black dark:text-white focus:border-indigo-500 dark:focus:border-indigo-500 transition-colors"
-              autoFocus
-            />
-            {searchQuery && (
-              <button 
-                onClick={() => setSearchQuery('')}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-800 dark:text-zinc-200"
-              >
-                <X size={14} />
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-      
-      <div className="flex-1 overflow-y-auto px-4 pt-6 pb-6 flex flex-col" style={chat.theme ? { backgroundColor: chat.theme } : {}}>
-        <AnimatePresence initial={false}>
-          {chatMessages.filter(msg => !searchQuery || msg.text.toLowerCase().includes(searchQuery.toLowerCase())).map((msg, index, filteredArray) => {
-            const isMe = msg.senderId === currentUser?.id;
-            const prevMsg = filteredArray[index - 1];
-            const nextMsg = filteredArray[index + 1];
-            
-            const isSameSenderAsPrev = prevMsg && prevMsg.senderId === msg.senderId;
-            const isSameSenderAsNext = nextMsg && nextMsg.senderId === msg.senderId;
-            
-            const showDateHeader = !prevMsg || !isSameDay(msg.createdAt, prevMsg.createdAt);
-            const isSystem = msg.senderId === 'system';
-            
-            if (isSystem) {
-               const isVideo = msg.text.toLowerCase().includes('video');
-               return (
-                 <motion.div layout initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="flex flex-col" key={msg.id}>
-                   {showDateHeader && (
-                     <div className="flex justify-center my-6">
-                       <span className="text-[11px] font-bold text-zinc-500 dark:text-zinc-500 uppercase tracking-widest bg-zinc-100 dark:bg-zinc-900 px-3 py-1 rounded-full">
-                         {format(msg.createdAt, 'MMM d, yyyy')}
-                       </span>
-                     </div>
-                   )}
-                   <div className="flex justify-center my-2">
-                      <span className="flex items-center gap-2 px-4 py-1.5 bg-zinc-100 dark:bg-zinc-900 rounded-full text-xs font-semibold tracking-wide text-zinc-500 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-800">
-                        {isVideo ? <Video size={14} className="text-zinc-400" /> : <Phone size={14} className="text-zinc-400" />}
-                        {msg.text}
-                      </span>
-                   </div>
-                 </motion.div>
-               );
-            }
-
-            const sender = isMe ? currentUser : chatUsers[msg.senderId];
-            const needsAvatarSpace = !isMe && !isSameSenderAsNext;
-            const senderName = sender ? (chat.nicknames?.[sender.id] || sender.name) : 'Unknown';
-
-            return (
-              <motion.div layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col" key={msg.id}>
-              {showDateHeader && (
-                <div className="flex justify-center my-6">
-                  <span className="text-[11px] font-bold text-zinc-500 dark:text-zinc-500 uppercase tracking-widest bg-zinc-100 dark:bg-zinc-900 px-3 py-1 rounded-full">
-                    {format(msg.createdAt, 'MMM d, yyyy')}
-                  </span>
-                </div>
-              )}
-              <div className={cn("flex items-end gap-2", !isSameSenderAsPrev ? "mt-2" : "mt-0.5", isMe ? "justify-end" : "justify-start")}>
-                {!isMe && (
-                  <div className="w-8 shrink-0">
-                    {needsAvatarSpace && sender && (
-                      <Link to={`/${sender.username}`}>
-                        <img src={sender.avatar || undefined} className="w-8 h-8 rounded-full bg-zinc-200 dark:bg-zinc-800 object-cover" />
-                      </Link>
-                    )}
-                  </div>
-                )}
-                <div className={cn("flex flex-col group max-w-[75%] select-none", isMe ? "items-end" : "items-start")}
-                  onTouchStart={(e) => {
-                    if (!isMe || msg.isDeleted) return;
-                    (e.currentTarget as any)._hold = setTimeout(() => {
-                      showConfirm('Delete message?', () => deleteMessage(chatId, msg.id));
-                    }, 500);
-                  }}
-                  onTouchEnd={(e) => clearTimeout((e.currentTarget as any)._hold)}
-                  onTouchMove={(e) => clearTimeout((e.currentTarget as any)._hold)}
-                  onContextMenu={(e) => {
-                    e.preventDefault();
-                  }}
-                >
-                  {isGroup && !isMe && !isSameSenderAsPrev && sender && (
-                    <span className="text-[11px] text-zinc-500 dark:text-zinc-500 ml-1 mb-1">{senderName}</span>
-                  )}
-                  <div className={cn(
-                    "px-4 py-2.5 text-[15px] leading-relaxed relative flex items-center", 
-                    (msg.imageUrl || msg.videoUrl) ? "p-1 rounded-2xl overflow-hidden bg-transparent border-0" :
-                    (isMe ? "bg-indigo-600 text-black dark:text-white shadow-sm" : "bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-sm"),
-                    // Border radiuses for grouping
-                    !(msg.imageUrl || msg.videoUrl) && "rounded-2xl",
-                    !(msg.imageUrl || msg.videoUrl) && isMe && isSameSenderAsNext && "rounded-br-md",
-                    !(msg.imageUrl || msg.videoUrl) && isMe && isSameSenderAsPrev && "rounded-tr-md",
-                    !(msg.imageUrl || msg.videoUrl) && !isMe && isSameSenderAsNext && "rounded-bl-md",
-                    !(msg.imageUrl || msg.videoUrl) && !isMe && isSameSenderAsPrev && "rounded-tl-md",
-                    msg.isDeleted && "opacity-60 italic bg-zinc-100 border-none text-zinc-500 dark:text-zinc-500"
-                  )}>
-                    {msg.videoUrl ? (
-                      <ChunkedVideoPlayer videoUrl={msg.videoUrl} postId={msg.id} controls className="rounded-xl w-full max-w-[240px] max-h-[300px] object-cover" />
-                    ) : msg.imageUrl ? (
-                      <img src={msg.imageUrl} className="rounded-xl w-full max-w-[240px] max-h-[300px] object-cover" />
-                    ) : (
-                      <HighlightedText text={msg.text} highlight={searchQuery} />
-                    )}
-                  </div>
-                  <div className={cn("flex items-center gap-2", isMe ? "self-end" : "self-start")}>
-                    {isMe && !msg.isDeleted && (
-                        <button 
-                          onClick={() => { showConfirm('Delete message?', () => deleteMessage(chatId, msg.id)) }} 
-                          className="opacity-0 lg:group-hover:opacity-100 transition-opacity text-[10px] text-rose-500 uppercase tracking-widest font-bold"
-                        >
-                          Delete
-                        </button>
-                    )}
-                    <span className="text-[10px] text-zinc-500 dark:text-zinc-400 font-medium px-1 mt-1">
-                      {format(msg.createdAt, 'h:mm a')}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-          );
-        })}
-        </AnimatePresence>
-        <div ref={messagesEndRef} className="pt-2" />
-      </div>
-
-      <form onSubmit={handleSend} className="px-4 py-3 bg-white dark:bg-black border-t border-zinc-200 dark:border-zinc-800 mb-safe shrink-0 w-full box-border">
-        <div className="flex items-center gap-2 sm:gap-3 w-full max-w-full">
-          <div className="bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-full flex-1 min-w-0 flex items-center pr-2 pl-4 py-2">
-            <input 
-              type="text"
-              value={text}
-              onChange={e => setText(e.target.value)}
-              placeholder="Message..."
-              className="bg-transparent flex-1 min-w-0 outline-none py-1 text-[15px] placeholder:text-black dark:text-white"
-            />
-            <label className="p-1.5 rounded-full text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 hover:text-indigo-500 hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors cursor-pointer shrink-0">
-              <ImageIcon size={20} />
-              <input type="file" className="hidden" accept="image/*,video/*" onChange={async (e) => {
-                const f = e.target.files?.[0];
-                if (f) {
-                  try {
-                    if (f.type.startsWith('image/')) {
-                      const dataUrl = await resizeImage(f, 800, 800);
-                      sendMessage(chatId, '', dataUrl);
-                    } else if (f.type.startsWith('video/')) {
-                      // Basic file to base64 for video
-                      if (f.size > 8 * 1024 * 1024) { 
-                        alert("Video must be under 8MB for the preview environment.");
-                        return;
-                      }
-                      const reader = new FileReader();
-                      reader.onloadend = () => {
-                        sendMessage(chatId, '', undefined, reader.result as string);
-                      };
-                      reader.readAsDataURL(f);
-                    }
-                  } catch(e) {
-                    console.error(e);
-                  }
-                }
-              }} />
-            </label>
-          </div>
-          <button 
-            type="submit" 
-            disabled={!text.trim()}
-            className="w-10 h-10 bg-indigo-600 hover:bg-indigo-500 disabled:bg-zinc-200 dark:disabled:bg-zinc-800 disabled:text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 text-black dark:text-white rounded-full flex items-center justify-center transition-colors shrink-0"
-          >
-            <Send size={18} className={cn(!text.trim() && "ml-0", text.trim() && "ml-1")} />
-          </button>
-        </div>
-      </form>
-
-      {isSettingsOpen && (
-         <div className="absolute inset-0 z-50 bg-white dark:bg-black flex flex-col">
-           <header className="flex items-center px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black/90 backdrop-blur-md shrink-0">
-             <button onClick={() => setIsSettingsOpen(false)} className="mr-3 p-1.5 rounded-full text-zinc-500 dark:text-zinc-500 hover:text-black dark:text-white transition-colors"><ChevronLeft size={24} /></button>
-             <span className="font-bold text-[15px]">{isGroup ? 'Group Info' : 'Chat Settings'}</span>
-           </header>
-           <div className="flex-1 overflow-y-auto p-5">
-             <div className="flex flex-col items-center mb-8">
-                <div className="relative group">
-                  <img src={headerAvatar || undefined} className="w-24 h-24 rounded-full bg-zinc-200 dark:bg-zinc-800 object-cover" />
-                  {isGroup && (
-                    <label className="absolute inset-0 bg-white dark:bg-transparent/50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
-                      <ImageIcon className="text-black dark:text-white" />
-                      <input type="file" className="hidden" accept="image/*" onChange={async (e) => {
-                        const f = e.target.files?.[0];
-                        if(f) {
-                          try {
-                            const url = await resizeImage(f, 400, 400);
-                            updateDoc(doc(db, 'chats', chatId), { groupAvatar: url });
-                          }catch(err){}
-                        }
-                      }} />
-                    </label>
-                  )}
-                </div>
-                <h2 className="text-xl font-bold mt-4">{headerName}</h2>
-                <p className="text-zinc-500 dark:text-zinc-500">{chat.users.length} members</p>
-             </div>
-
-             <div className="mb-6">
-               <h3 className="font-bold text-lg mb-4">Chat Theme</h3>
-               <div className="flex gap-3 items-center bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-3 rounded-xl">
-                 <input type="color" value={chat.theme || ''} onChange={(e) => updateDoc(doc(db, 'chats', chatId), { theme: e.target.value })} className="w-8 h-8 rounded shrink-0 bg-transparent p-0 border-0" />
-                 <span className="text-[14px]">Background Color Overlay</span>
-                 {(chat.theme) && (
-                    <button onClick={() => updateDoc(doc(db, 'chats', chatId), { theme: null })} className="ml-auto text-xs text-red-500 font-bold">Clear</button>
-                 )}
-               </div>
-             </div>
-
-             <div className="mb-6">
-               <div className="flex items-center justify-between mb-4">
-                 <h3 className="font-bold text-lg">Members</h3>
-                 {isGroup && (!chat.onlyAdminsCanAddMembers || chat.admins?.includes(currentUser?.id || '')) && (
-                   <button onClick={() => {
-                     const username = window.prompt("Enter exact username to add:");
-                     if (username && username.trim()) {
-                       const fetchUser = async () => {
-                         const qRef = query(collection(db, 'users'), where('username', '==', username.trim().toLowerCase()));
-                         const snaps = await getDocs(qRef);
-                         if (!snaps.empty) {
-                           const matchId = snaps.docs[0].id;
-                           if (!chat.users.includes(matchId)) {
-                             updateDoc(doc(db, 'chats', chatId), { users: [...chat.users, matchId] });
-                             alert("Added!");
-                           } else alert("Already in group.");
-                         } else alert("User not found.");
-                       };
-                       fetchUser();
-                     }
-                   }} className="text-sm font-bold text-indigo-500 px-3 py-1 bg-indigo-50 dark:bg-indigo-900/30 rounded-full">Add Member</button>
-                 )}
-               </div>
-               
-               {isGroup && chat.admins?.includes(currentUser?.id || '') && (
-                 <div className="flex items-center justify-between p-3 bg-zinc-50 dark:bg-zinc-900 rounded-xl mb-4">
-                   <span className="font-medium text-sm">Only Admins can add members</span>
-                   <button 
-                     onClick={() => updateDoc(doc(db, 'chats', chatId), { onlyAdminsCanAddMembers: !chat.onlyAdminsCanAddMembers })} 
-                     className="w-10 h-5 bg-zinc-300 dark:bg-zinc-300 dark:bg-zinc-700 rounded-full relative transition-colors shadow-inner"
-                     style={{ backgroundColor: chat.onlyAdminsCanAddMembers ? '#6366f1' : undefined }}
-                   >
-                     <div className={cn("absolute top-0.5 left-0.5 bg-white w-4 h-4 rounded-full transition-transform shadow-sm", chat.onlyAdminsCanAddMembers && "translate-x-5")} />
-                   </button>
-                 </div>
-               )}
-
-               <div className="flex flex-col gap-3">
-                 {chat.users.map(uid => {
-                   const u = uid === currentUser?.id ? currentUser : chatUsers[uid];
-                   if (!u) return null;
-                   const nickname = chat.nicknames?.[uid] || '';
-                   return (
-                     <div key={uid} className="flex items-center gap-3">
-                       <img src={u.avatar || undefined} className="w-10 h-10 rounded-full object-cover bg-zinc-200 dark:bg-zinc-800" />
-                       <div className="flex flex-col">
-                         <span className="font-bold">{u.name} <span className="text-zinc-500 dark:text-zinc-500 font-normal ml-1">@{u.username}</span></span>
-                         {nickname && <span className="text-xs text-indigo-500 font-medium">Nickname: {nickname}</span>}
-                       </div>
-                       
-                       <div className="ml-auto flex items-center gap-2">
-                         <button onClick={() => {
-                           const newNick = window.prompt(`Set nickname for ${u.name}:`, nickname);
-                           if (newNick !== null) {
-                             updateDoc(doc(db, 'chats', chatId), {
-                               [`nicknames.${uid}`]: newNick.trim() || null
-                             });
-                           }
-                         }} className="text-[11px] text-zinc-500 dark:text-zinc-500 font-bold bg-zinc-100 dark:bg-zinc-900 px-2 py-1 rounded">Edit Nickname</button>
-                         
-                         {isGroup && chat.admins?.includes(u.id) && <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded">Admin</span>}
-                         
-                         {isGroup && chat.admins?.includes(currentUser?.id || '') && uid !== currentUser?.id && (
-                           <button onClick={() => {
-                             showConfirm(`Remove ${u.name} from group?`, () => {
-                               removeGroupMember(chatId, u.id);
-                             });
-                           }} className="text-[11px] text-red-500 font-bold bg-red-50 dark:bg-red-900/20 px-2 py-1 rounded">Remove</button>
-                         )}
-                       </div>
-                     </div>
-                   )
+                   );
                  })}
-               </div>
-             </div>
+                 {reports.length === 0 && (
+                   <div className="text-center py-20 text-zinc-400 dark:text-zinc-600 border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-2xl font-medium text-lg">
+                     No reports found
+                   </div>
+                 )}
+              </div>
+            )}
 
-             <div className="mb-6">
-               <h3 className="font-bold text-lg mb-4">Media</h3>
-               <div className="grid grid-cols-3 gap-1">
-                 {chatMessages.filter(m => m.imageUrl || m.videoUrl).map(m => (
-                   <div key={m.id} className="aspect-square bg-zinc-100 dark:bg-zinc-900 overflow-hidden relative">
-                     {m.videoUrl ? (
-                        <ChunkedVideoPlayer videoUrl={m.videoUrl} postId={m.id} className="w-full h-full object-cover" />
-                     ) : (
-                        <img src={m.imageUrl} className="w-full h-full object-cover" />
-                     )}
+            {tab === 'users' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                 {users.map(user => (
+                   <div key={user.id} className="p-5 border border-zinc-200 dark:border-zinc-800 rounded-2xl flex flex-col gap-4 bg-white dark:bg-zinc-900 shadow-sm relative group">
+                     <div className="flex items-center gap-4">
+                       <img src={user.avatar || undefined} className="w-12 h-12 rounded-full bg-zinc-200 dark:bg-zinc-800 object-cover" />
+                       <div className="flex flex-col min-w-0 flex-1">
+                         <span className="font-bold text-zinc-900 dark:text-zinc-100 text-[15px] flex items-center gap-1.5 truncate">
+                           {user.name} {user.isVerified && <span className="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center text-white text-[10px]"><Check size={10} strokeWidth={4}/></span>}
+                         </span>
+                         <span className="text-zinc-500 text-[13px] font-medium truncate">
+                            @{user.username}
+                         </span>
+                       </div>
+                     </div>
+                     <div className="flex items-center justify-between mt-1 pt-4 border-t border-zinc-100 dark:border-zinc-800/50">
+                       <div className="flex flex-col text-[11px] font-bold text-zinc-400 uppercase tracking-wider">
+                         <span>{user.followers?.length || 0} Followers</span>
+                         <span>ID: {user.id.slice(0, 6)}</span>
+                       </div>
+                       <div className="flex items-center gap-2">
+                           {user.bannedUntil && (user.bannedUntil?.toDate?.() || user.bannedUntil) > new Date() && <span className="text-rose-500 font-black tracking-wider uppercase text-[10px] bg-rose-50 dark:bg-rose-500/10 px-2 py-1 rounded-md">Banned</span>}
+                           <button onClick={() => handleDeleteUser(user.id)} className="p-2 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-xl transition-colors opacity-0 group-hover:opacity-100"><X size={18} strokeWidth={2.5} /></button>
+                       </div>
+                     </div>
                    </div>
                  ))}
-                 {chatMessages.filter(m => m.imageUrl || m.videoUrl).length === 0 && (
-                   <p className="text-sm text-zinc-500 dark:text-zinc-500 col-span-3">No media shared yet.</p>
-                 )}
-               </div>
-             </div>
-
-             <div className="mt-10 border-t border-zinc-200 dark:border-zinc-800 pt-6 flex justify-center pb-10">
-               <button onClick={() => {
-                 showConfirm("Are you sure you want to delete this chat forever?", async () => {
-                   await deleteChat(chatId);
-                   navigate('/chat');
-                 });
-               }} className="text-red-500 font-bold bg-red-50 dark:bg-red-900/20 px-6 py-2 rounded-xl text-sm transition-colors hover:bg-red-100 dark:hover:bg-red-900/40">Delete Chat</button>
-             </div>
-           </div>
-         </div>
-      )}
-    </motion.div>
-  );
-};
-
-const SearchScreen = () => {
-  const [searchParams] = useSearchParams();
-  const [queryText, setQueryText] = useState(searchParams.get('q') || '');
-  const [users, setUsers] = useState<User[]>([]);
-  const { currentUser, posts } = useApp();
-
-  useEffect(() => {
-    setQueryText(searchParams.get('q') || '');
-  }, [searchParams]);
-
-  useEffect(() => {
-    if (!queryText.trim()) {
-      setUsers([]);
-      return;
-    }
-    const q = query(
-      collection(db, 'users'), 
-      where('username', '>=', queryText.toLowerCase()),
-      where('username', '<', queryText.toLowerCase() + '\uf8ff')
-    );
-    const unsub = onSnapshot(q, snap => {
-      const u: User[] = [];
-      snap.forEach(d => {
-        if (d.id !== currentUser?.id) {
-          const user = d.data() as User;
-          if (!user.deactivated) u.push(user);
-        }
-      });
-      setUsers(u);
-    }, error => console.error("Users search error:", error.message));
-    return () => unsub();
-  }, [queryText, currentUser]);
-
-  const matchedPosts = queryText.trim() 
-    ? posts.filter(p => p.caption?.toLowerCase().includes(queryText.toLowerCase()))
-    : [];
-
-  const randomPosts = useMemo(() => {
-    return [...posts].filter(p => p.imageUrl || p.videoUrl).sort(() => Math.random() - 0.5).slice(0, 30);
-  }, [posts.length]);
-
-  return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex-1 flex flex-col min-h-0 bg-white dark:bg-black">
-      <header className="px-5 py-5 border-b border-zinc-200 dark:border-zinc-800 sticky top-0 bg-white dark:bg-black/90 backdrop-blur-md z-40 shrink-0">
-        <h1 className="font-bold text-[15px] tracking-wide text-zinc-900 dark:text-zinc-100">Explore</h1>
-      </header>
-      <div className="flex-1 overflow-y-auto w-full">
-        <div className="p-5 pb-2 sticky top-0 bg-white dark:bg-black z-10 w-full shrink-0">
-          <div className="w-full bg-zinc-100 dark:bg-zinc-900/50 rounded-xl px-4 py-3 flex items-center gap-3 border border-zinc-200 dark:border-zinc-800">
-            <Search size={20} className="text-zinc-500 dark:text-zinc-500 shrink-0" />
-            <input 
-              type="text" 
-              placeholder={`Search...`} 
-              value={queryText}
-              onChange={e => setQueryText(e.target.value)}
-              className="bg-transparent border-none outline-none text-black dark:text-white w-full placeholder:text-zinc-600 min-w-0"
-            />
+              </div>
+            )}
           </div>
-        </div>
-        <div className="flex flex-col w-full min-w-0 p-5 pt-2">
-          {queryText.trim() && users.length === 0 && matchedPosts.length === 0 && (
-            <div className="text-center text-zinc-500 dark:text-zinc-500 mt-10">No results found</div>
-          )}
-          
-          {users.length > 0 && queryText.trim() && (
-            <div className="mb-6">
-              <h2 className="text-[13px] font-bold tracking-wide uppercase text-zinc-500 dark:text-zinc-500 mb-3 px-1">Accounts</h2>
-              <div className="flex gap-4 overflow-x-auto hide-scrollbar pb-2">
-                {users.map(u => (
-                  <Link key={u.id} to={`/${u.username}`} className="flex flex-col items-center gap-2 min-w-[80px] shrink-0">
-                    <img src={u.avatar || undefined} alt="" className="w-16 h-16 rounded-full object-cover bg-zinc-200 dark:bg-zinc-800 border-2 border-transparent hover:border-black dark:hover:border-white transition-colors" />
-                    <div className="font-bold text-black dark:text-white text-[12px] truncate w-full text-center">{u.username}</div>
-                  </Link>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {(queryText.trim() ? matchedPosts : randomPosts).length > 0 && (
-            <div>
-              <h2 className="text-[13px] font-bold tracking-wide uppercase text-zinc-500 dark:text-zinc-500 mb-3 px-1">
-                {queryText.trim() ? 'Posts' : 'Suggested Posts'}
-              </h2>
-              <div className="grid grid-cols-3 gap-1">
-                {(queryText.trim() ? matchedPosts : randomPosts).map(post => (
-                  <Link key={post.id} to={`/post/${post.id}/comments`} className="aspect-square bg-zinc-100 dark:bg-zinc-900 relative block group overflow-hidden">
-                     {post.imageUrl ? (
-                       <img src={post.imageUrl} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                     ) : post.videoUrl ? (
-                       <ChunkedVideoPlayer videoUrl={post.videoUrl} postId={post.id} className="w-full h-full object-cover pointer-events-none group-hover:scale-105 transition-transform duration-500" />
-                     ) : (
-                       <div className="w-full h-full flex items-center justify-center p-2 text-center text-[10px] break-words group-hover:scale-105 transition-transform duration-500">
-                         <span className="line-clamp-3">{post.caption}</span>
-                       </div>
-                     )}
-                     <div className="absolute inset-0 bg-transparent group-hover:bg-black/10 dark:group-hover:bg-white/10 transition-colors" />
-                     {post.videoUrl && (
-                        <div className="absolute top-1 right-1 bg-black/50 rounded p-1">
-                           <Video size={12} className="text-white" />
-                        </div>
-                     )}
-                  </Link>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       </div>
     </motion.div>
   );
-};
-
-const ChunkedVideoPlayer = ({ videoUrl, postId, className, controls = false }: { videoUrl: string, postId: string, className?: string, controls?: boolean }) => {
-  const [videoSrc, setVideoSrc] = useState<string>(videoUrl === 'chunked' ? '' : videoUrl);
-  
-  useEffect(() => {
-    if (videoUrl !== 'chunked') {
-      setVideoSrc(videoUrl);
-      return;
-    }
-    const fetchChunks = async () => {
-      try {
-        const q = query(collection(db, 'video_chunks'), where('postId', '==', postId));
-        const snap = await getDocs(q);
-        const chunks = snap.docs.map(d => d.data()).sort((a, b) => a.chunkIndex - b.chunkIndex);
-        const fullData = chunks.map(c => c.data).join('');
-        setVideoSrc(fullData);
-      } catch (e) {
-        console.error("Error loading chunked video", e);
-      }
-    };
-    fetchChunks();
-  }, [postId, videoUrl]);
-
-  if (!videoSrc) {
-    return <div className={`flex items-center justify-center bg-black/10 animate-pulse ${className}`}><Video className="text-white/50" /></div>;
-  }
-  
-  return <video src={videoSrc} controls={controls} className={className} />;
-};
-
-const CreatePostScreen = () => {
-  const { currentUser, showToast } = useApp();
-  const navigate = useNavigate();
-  const [caption, setCaption] = useState('');
-  const [imageUrl, setImageUrl] = useState('');
-  const [videoUrl, setVideoUrl] = useState('');
-  const [isUploading, setIsUploading] = useState(false);
-  const [isItalic, setIsItalic] = useState(false);
-
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !currentUser) return;
-    
-    if (file.type.startsWith('video/')) {
-      if (file.size > 8 * 1024 * 1024) {
-        showToast('Video must be under 8 MB');
-        return;
-      }
-      setIsUploading(true);
-      const reader = new FileReader();
-      reader.onloadend = () => {
-         setVideoUrl(reader.result as string);
-         setImageUrl(''); // Clear any existing image
-         setIsUploading(false);
-      };
-      reader.onerror = () => {
-         showToast('Error reading video');
-         setIsUploading(false);
-      };
-      reader.readAsDataURL(file);
-      return;
-    }
-
-    setIsUploading(true);
-    try {
-      const resizedBase64 = await resizeImage(file, 800, 800);
-      setImageUrl(resizedBase64);
-      setVideoUrl(''); // Clear any existing video
-    } catch (error) {
-      console.error("Upload error", error);
-      showToast('Error parsing image');
-    }
-    setIsUploading(false);
-  };
-
-  const handleCreate = async () => {
-    if ((!caption.trim() && !imageUrl && !videoUrl) || !currentUser) return;
-    setIsUploading(true);
-    const postId = `p${Date.now()}`;
-    
-    let finalVideoUrl = videoUrl;
-    
-    try {
-      if (videoUrl && videoUrl.length > 500000) {
-        const CHUNK_SIZE = 800000;
-        const chunks = [];
-        for (let i = 0; i < videoUrl.length; i += CHUNK_SIZE) {
-          chunks.push(videoUrl.slice(i, i + CHUNK_SIZE));
-        }
-        
-        await Promise.all(chunks.map((chunkStr, idx) => {
-          return setDoc(doc(collection(db, 'video_chunks')), {
-            postId,
-            chunkIndex: idx,
-            data: chunkStr,
-            createdAt: serverTimestamp()
-          });
-        }));
-        finalVideoUrl = 'chunked';
-      }
-
-      const newPost = {
-        id: postId,
-        userId: currentUser.id,
-        imageUrl,
-        videoUrl: finalVideoUrl,
-        caption: caption.trim(),
-        likes: 0,
-        likedBy: [],
-        createdAt: serverTimestamp(),
-        isItalic: (!imageUrl && !videoUrl) ? isItalic : false,
-      };
-
-      await setDoc(doc(db, 'posts', postId), newPost);
-      navigate('/');
-    } catch (e) {
-      console.error(e);
-      showToast('Error creating post');
-    }
-    setIsUploading(false);
-  };
-
-  const canSubmit = (!!imageUrl || !!videoUrl || !!caption.trim()) && !isUploading;
-
-  return (
-    <motion.div initial={{ y: 50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="flex-1 flex flex-col min-h-0 bg-white dark:bg-black">
-      <header className="flex items-center justify-between px-5 py-4 border-b border-zinc-200 dark:border-zinc-800 shrink-0 bg-white dark:bg-black/90 backdrop-blur-md sticky top-0 z-10">
-        <button onClick={() => navigate(-1)} className="text-zinc-500 dark:text-zinc-500 dark:text-zinc-400 hover:text-black dark:text-white transition-colors"><ChevronLeft size={24} /></button>
-        <span className="font-bold text-lg text-zinc-900 dark:text-zinc-100">New Post</span>
-        <button onClick={handleCreate} className={cn("font-bold text-[13px] uppercase tracking-wider text-indigo-400 transition-opacity", !canSubmit ? "opacity-30" : "hover:text-indigo-300")} disabled={!canSubmit}>Share</button>
-      </header>
-      
-      <div className="flex-1 overflow-y-auto flex flex-col p-4">
-        <div className="flex gap-4 items-start pb-4 border-b border-zinc-200 dark:border-zinc-800/50 mb-4 shrink-0 flex-col">
-          <div className="flex gap-4 items-start w-full">
-            <img src={currentUser?.avatar || undefined} alt="" className="w-10 h-10 rounded-full bg-zinc-200 dark:bg-zinc-800 object-cover shrink-0" />
-            <textarea
-              value={caption}
-              onChange={e => setCaption(e.target.value)}
-              placeholder="Write a caption... (optional if you add an image)"
-              className={cn("bg-transparent flex-1 resize-none outline-none text-[15px] min-h-[100px] border-none text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-500 dark:text-zinc-500 font-medium pt-2", isItalic && !imageUrl && "italic")}
-              autoFocus
-            />
-          </div>
-          {!imageUrl && (
-            <div className="flex w-full justify-end px-2">
-              <button
-                onClick={() => setIsItalic(!isItalic)}
-                className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-colors border", isItalic ? "bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800" : "bg-zinc-100 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-800")}
-              >
-                <Type size={14} className={isItalic ? "italic" : ""} />
-                Italic
-              </button>
-            </div>
-          )}
-        </div>
-
-        {!imageUrl && !videoUrl ? (
-          <div className="flex-1 flex items-start justify-center">
-            <label className="flex flex-col w-full aspect-video bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors rounded-2xl items-center justify-center gap-4 cursor-pointer border-dashed border-2">
-              <input 
-                type="file"
-                accept="image/*,video/*"
-                className="hidden"
-                onChange={handleUpload}
-                disabled={isUploading}
-              />
-              {isUploading ? (
-                 <span className="text-zinc-500 dark:text-zinc-500 font-bold uppercase tracking-widest text-[14px] animate-pulse">Processing...</span>
-              ) : (
-                 <>
-                   <ImageIcon size={32} className="text-zinc-500 dark:text-zinc-500 dark:text-zinc-400"/>
-                   <span className="text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 font-medium tracking-tight text-[14px]">Attach Photo or Video (Optional)</span>
-                 </>
-              )}
-            </label>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-4">
-             <div className="w-full bg-zinc-100 dark:bg-zinc-900 relative rounded-2xl overflow-hidden shadow-sm border border-zinc-200 dark:border-zinc-800">
-               {imageUrl ? (
-                 <img src={imageUrl} alt="Preview" className="w-full h-auto object-cover max-h-[60vh] mx-auto" />
-               ) : (
-                 <video src={videoUrl} controls className="w-full h-auto max-h-[60vh] mx-auto outline-none" />
-               )}
-               <label className="absolute bottom-4 right-4 bg-white dark:bg-black/70 backdrop-blur-md px-3 py-1.5 rounded-full text-black dark:text-white text-[12px] font-bold cursor-pointer hover:bg-white dark:hover:bg-zinc-800 transition-colors flex items-center gap-2 border border-zinc-200 dark:border-zinc-800 shadow-sm">
-                  <ImageIcon size={14} /> Change Media
-                  <input type="file" accept="image/*,video/*" className="hidden" onChange={handleUpload} disabled={isUploading} />
-               </label>
-               <button onClick={() => { setImageUrl(''); setVideoUrl(''); }} className="absolute top-4 right-4 bg-white dark:bg-black/70 backdrop-blur-md w-8 h-8 rounded-full flex items-center justify-center text-black dark:text-white border border-zinc-200 dark:border-zinc-800 shadow-sm hover:scale-105 transition-transform flex-shrink-0">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-               </button>
-             </div>
-          </div>
-        )}
-      </div>
-    </motion.div>
-  );
-};
-
-// Helper to check online status (within 5 minutes)
-export const checkIsOnline = (lastActive: any): boolean => {
-  if (!lastActive) return false;
-  const t = typeof lastActive.toMillis === 'function' ? lastActive.toMillis() : (lastActive.getTime?.() || lastActive);
-  return (Date.now() - t) < 5 * 60 * 1000;
 };
 
 const UserProfileScreen = () => {
@@ -4158,14 +2146,17 @@ const AuthScreen = () => {
         await signInWithPopup(auth, provider);
       }
     } catch (e: any) {
-      console.error(e);
       setLoading(false);
       if (e.code === 'auth/popup-closed-by-user') {
+        // User closed popup, just show a message, no need to log as an error
         setErrorMsg('Login popup was closed before completing. Please try again.');
-      } else if (e.code === 'auth/unauthorized-domain') {
-        setErrorMsg('This domain is not authorized. Please add your Vercel domain to Firebase Console -> Authentication -> Settings -> Authorized domains.');
       } else {
-        setErrorMsg(e.message || 'Failed to sign in. Please try again.');
+        console.error(e);
+        if (e.code === 'auth/unauthorized-domain') {
+          setErrorMsg('This domain is not authorized. Please add your Vercel domain to Firebase Console -> Authentication -> Settings -> Authorized domains.');
+        } else {
+          setErrorMsg(e.message || 'Failed to sign in. Please try again.');
+        }
       }
     }
   };
@@ -4875,38 +2866,42 @@ export default function App() {
             <div className="flex-1 flex justify-center items-center bg-white dark:bg-black"><DecorativeLoader /></div>
           ) : (
             <BrowserRouter>
-              <div className="flex-1 flex flex-col md:flex-row min-h-0 relative w-full h-full justify-center">
-                <div className="hidden md:flex flex-col w-[80px] lg:w-[240px] shrink-0 border-r border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black relative z-40">
-                   <SideNav />
-                </div>
-                <div className="flex-1 flex flex-col min-h-0 relative w-full max-w-[600px] pt-safe sm:border-x border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black">
-                  <AnimatePresence mode="wait">
-                    <Routes>
-                        <Route path="/" element={<FeedScreen />} />
-                      <Route path="/notifications" element={<ProtectedRoute><NotificationsScreen /></ProtectedRoute>} />
-                      <Route path="/search" element={<ProtectedRoute><SearchScreen /></ProtectedRoute>} />
-                      <Route path="/create" element={<ProtectedRoute><CreatePostScreen /></ProtectedRoute>} />
-                      <Route path="/contests" element={<ProtectedRoute><ContestsScreen /></ProtectedRoute>} />
-                      <Route path="/contest/:id" element={<ProtectedRoute><ContestDetailScreen /></ProtectedRoute>} />
-                      <Route path="/chat" element={<ProtectedRoute><ChatListScreen /></ProtectedRoute>} />
-                      <Route path="/chat/group/create" element={<ProtectedRoute><CreateGroupChatScreen /></ProtectedRoute>} />
-                      <Route path="/chat/:id" element={<ProtectedRoute><ChatRoomScreen /></ProtectedRoute>} />
-                      <Route path="/post/:postId/comments" element={<ProtectedRoute><CommentsScreen /></ProtectedRoute>} />
-                      <Route path="/profile" element={<ProtectedRoute><ProfileScreen /></ProtectedRoute>} />
-                      <Route path="/profile/edit" element={<ProtectedRoute><EditProfileScreen /></ProtectedRoute>} />
-                      <Route path="/settings" element={<ProtectedRoute><SettingsScreen /></ProtectedRoute>} />
-                      <Route path="/admin" element={<ProtectedRoute><AdminDashboardScreen /></ProtectedRoute>} />
-                      <Route path="/:username" element={<ProtectedRoute><UserProfileScreen /></ProtectedRoute>} />
-                    </Routes>
-                  </AnimatePresence>
-                </div>
-                <div className="hidden lg:block w-[300px] shrink-0 border-l border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black relative z-40">
-                  <RightSidebar />
-                </div>
-              </div>
-              <div className="md:hidden shrink-0">
-                <BottomNav />
-              </div>
+              <Routes>
+                <Route path="/admin" element={<ProtectedRoute><AdminDashboardScreen /></ProtectedRoute>} />
+                <Route path="/*" element={
+                  <div className="flex-1 flex flex-col md:flex-row min-h-0 relative w-full h-full justify-center">
+                    <div className="hidden md:flex flex-col w-[80px] lg:w-[240px] shrink-0 border-r border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black relative z-40">
+                       <SideNav />
+                    </div>
+                    <div className="flex-1 flex flex-col min-h-0 relative w-full max-w-[600px] pt-safe sm:border-x border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black">
+                      <AnimatePresence mode="wait">
+                        <Routes>
+                          <Route path="/" element={<FeedScreen />} />
+                          <Route path="/notifications" element={<ProtectedRoute><NotificationsScreen /></ProtectedRoute>} />
+                          <Route path="/search" element={<ProtectedRoute><SearchScreen /></ProtectedRoute>} />
+                          <Route path="/create" element={<ProtectedRoute><CreatePostScreen /></ProtectedRoute>} />
+                          <Route path="/contests" element={<ProtectedRoute><ContestsScreen /></ProtectedRoute>} />
+                          <Route path="/contest/:id" element={<ProtectedRoute><ContestDetailScreen /></ProtectedRoute>} />
+                          <Route path="/chat" element={<ProtectedRoute><ChatListScreen /></ProtectedRoute>} />
+                          <Route path="/chat/group/create" element={<ProtectedRoute><CreateGroupChatScreen /></ProtectedRoute>} />
+                          <Route path="/chat/:id" element={<ProtectedRoute><ChatRoomScreen /></ProtectedRoute>} />
+                          <Route path="/post/:postId/comments" element={<ProtectedRoute><CommentsScreen /></ProtectedRoute>} />
+                          <Route path="/profile" element={<ProtectedRoute><ProfileScreen /></ProtectedRoute>} />
+                          <Route path="/profile/edit" element={<ProtectedRoute><EditProfileScreen /></ProtectedRoute>} />
+                          <Route path="/settings" element={<ProtectedRoute><SettingsScreen /></ProtectedRoute>} />
+                          <Route path="/:username" element={<ProtectedRoute><UserProfileScreen /></ProtectedRoute>} />
+                        </Routes>
+                      </AnimatePresence>
+                    </div>
+                    <div className="hidden lg:block w-[300px] shrink-0 border-l border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black relative z-40">
+                      <RightSidebar />
+                    </div>
+                    <div className="md:hidden shrink-0 absolute bottom-0 left-0 right-0 z-50">
+                      <BottomNav />
+                    </div>
+                  </div>
+                } />
+              </Routes>
               <CallManager />
             </BrowserRouter>
           )}
